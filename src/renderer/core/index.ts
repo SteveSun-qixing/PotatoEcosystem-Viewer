@@ -4,3 +4,5 @@
  */
 
 export * from './viewer';
+export * from './plugin';
+export * from './shortcuts';
