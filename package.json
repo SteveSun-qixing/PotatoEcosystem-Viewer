@@ -1,0 +1,58 @@
+{
+  "name": "@chips/viewer",
+  "version": "1.0.0",
+  "description": "薯片卡片查看器 - Chips 生态的轻量级查看应用",
+  "author": "Chips Team",
+  "license": "MIT",
+  "main": "dist-electron/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite",
+    "build": "electron-vite build",
+    "build:web": "vite build",
+    "preview": "electron-vite preview",
+    "preview:web": "vite preview",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "lint": "eslint src --ext .ts,.vue",
+    "lint:fix": "eslint src --ext .ts,.vue --fix",
+    "type-check": "vue-tsc --noEmit",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
+  },
+  "dependencies": {
+    "@chips/core": "workspace:^1.0.0",
+    "@chips/foundation": "workspace:^1.0.0",
+    "@chips/sdk": "workspace:^1.0.0",
+    "@chips/components": "workspace:^0.1.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.0",
+    "pinia": "^2.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-vite": "^2.0.0",
+    "vite": "^5.0.0",
+    "typescript": "^5.3.0",
+    "vue-tsc": "^1.8.0",
+    "@vitejs/plugin-vue": "^4.5.0",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "@vitest/ui": "^1.0.0",
+    "@vue/test-utils": "^2.4.0",
+    "@playwright/test": "^1.40.0",
+    "jsdom": "^23.0.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-vue": "^9.19.0",
+    "@typescript-eslint/eslint-plugin": "^6.18.0",
+    "@typescript-eslint/parser": "^6.18.0",
+    "prettier": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

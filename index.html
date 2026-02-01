@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Chips Viewer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body,
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+
+      .chips-viewer {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chips-viewer__header {
+        height: 48px;
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      .chips-viewer__title {
+        font-size: 16px;
+        font-weight: 500;
+      }
+
+      .chips-viewer__content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .chips-viewer__empty {
+        text-align: center;
+        color: #666;
+      }
+
+      .chips-viewer__empty p {
+        margin: 8px 0;
+      }
+
+      .chips-viewer__footer {
+        height: 24px;
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        border-top: 1px solid #e0e0e0;
+        font-size: 12px;
+        color: #666;
+      }
+
+      .chips-viewer__loading {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .chips-viewer__loading-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #e0e0e0;
+        border-top-color: #333;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .chips-viewer__loading-text {
+        margin-top: 16px;
+        color: #666;
+      }
+
+      .chips-viewer__error {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #d32f2f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/renderer/main.ts"></script>
+  </body>
+</html>
