@@ -6,6 +6,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
+      outDir: 'dist-electron/main',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
@@ -21,15 +22,27 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
+      outDir: 'dist-electron/preload',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/preload/index.ts'),
         },
       },
     },
+    resolve: {
+      alias: {
+        '@common': resolve(__dirname, 'src/common'),
+      },
+    },
   },
   renderer: {
+    root: resolve(__dirname, 'src/renderer'),
     plugins: [vue()],
+    build: {
+      rollupOptions: {
+        input: resolve(__dirname, 'src/renderer/index.html'),
+      },
+    },
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),

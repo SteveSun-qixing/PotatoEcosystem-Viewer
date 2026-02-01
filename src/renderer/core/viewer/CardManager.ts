@@ -238,6 +238,9 @@ export class CardManager implements ICardManager {
     options: CardRenderOptions
   ): CardRenderResult {
     this.logger.debug('Rendering card locally', { cardId: card.id });
+    console.log('[CardManager] renderCardLocally called');
+    console.log('[CardManager] Card:', card);
+    console.log('[CardManager] Container:', container);
 
     try {
       // 创建 iframe
@@ -251,10 +254,13 @@ export class CardManager implements ICardManager {
 
       // 创建内容（简化版）
       const content = this.generateCardContent(card, options);
+      console.log('[CardManager] Generated content length:', content.length);
       frame.srcdoc = content;
 
       // 挂载
+      console.log('[CardManager] Appending frame to container');
       container.appendChild(frame);
+      console.log('[CardManager] Frame appended successfully');
 
       return {
         success: true,
@@ -262,6 +268,7 @@ export class CardManager implements ICardManager {
         metadata: card.metadata,
       };
     } catch (error) {
+      console.error('[CardManager] renderCardLocally error:', error);
       return {
         success: false,
         error: (error as Error).message,
@@ -270,10 +277,19 @@ export class CardManager implements ICardManager {
   }
 
   /**
-   * 生成卡片内容 HTML
+   * 生成卡片内容 HTML（简洁版 - 类似图片查看器）
    */
-  private generateCardContent(card: Card, options: CardRenderOptions): string {
+  private generateCardContent(card: Card & { baseCards?: any[] }, options: CardRenderOptions): string {
     const theme = options.themeId ?? 'light';
+    const baseCards = card.baseCards || [];
+    
+    // 渲染所有基础卡片内容（无边框，连续显示）
+    const baseCardsHtml = baseCards.map(bc => this.renderBaseCard(bc)).join('\n');
+    
+    // 如果没有基础卡片，显示卡片描述
+    const contentHtml = baseCards.length > 0 
+      ? baseCardsHtml 
+      : `<div class="empty-content">${this.escapeHtml(card.metadata.description || '暂无内容')}</div>`;
 
     return `
 <!DOCTYPE html>
@@ -281,69 +297,239 @@ export class CardManager implements ICardManager {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${card.metadata.name}</title>
+  <title>${this.escapeHtml(card.metadata.name)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: var(--bg-color, #fff);
       color: var(--text-color, #333);
-      padding: 16px;
+      line-height: 1.7;
+      padding: 40px 24px;
     }
     [data-theme="dark"] {
       --bg-color: #1a1a1a;
       --text-color: #e0e0e0;
+      --meta-color: #888;
+      --code-bg: #2a2a2a;
+      --quote-border: #404040;
+      --quote-bg: #252525;
     }
-    .card-container {
-      max-width: 100%;
+    [data-theme="light"] {
+      --bg-color: #ffffff;
+      --text-color: #333333;
+      --meta-color: #666666;
+      --code-bg: #f5f5f5;
+      --quote-border: #ddd;
+      --quote-bg: #fafafa;
+    }
+    
+    /* 内容容器 */
+    .content {
+      max-width: 800px;
       margin: 0 auto;
     }
-    .card-header {
-      margin-bottom: 16px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border-color, #e0e0e0);
+    
+    /* 基础卡片内容（无边框） */
+    .base-card-content {
+      margin-bottom: 32px;
     }
-    .card-title {
-      font-size: 24px;
+    .base-card-content:last-child {
+      margin-bottom: 0;
+    }
+    
+    /* 富文本样式 */
+    h1 { font-size: 32px; font-weight: 700; margin: 32px 0 20px; line-height: 1.3; }
+    h2 { font-size: 26px; font-weight: 600; margin: 28px 0 16px; line-height: 1.3; }
+    h3 { font-size: 22px; font-weight: 600; margin: 24px 0 12px; line-height: 1.4; }
+    h4 { font-size: 18px; font-weight: 600; margin: 20px 0 10px; }
+    h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+    
+    p { margin-bottom: 18px; font-size: 16px; }
+    
+    ul, ol { margin: 18px 0; padding-left: 28px; }
+    li { margin-bottom: 10px; }
+    li > ul, li > ol { margin: 8px 0; }
+    
+    blockquote {
+      border-left: 4px solid var(--quote-border);
+      padding: 16px 24px;
+      margin: 20px 0;
+      background: var(--quote-bg);
+      font-style: italic;
+      color: var(--meta-color);
+    }
+    blockquote p:last-child { margin-bottom: 0; }
+    
+    code {
+      background: var(--code-bg);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    
+    pre {
+      background: var(--code-bg);
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 20px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+    }
+    
+    a { color: #1890ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 20px 0;
+      display: block;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid var(--quote-border);
+      padding: 12px 16px;
+      text-align: left;
+    }
+    th {
+      background: var(--code-bg);
       font-weight: 600;
-      margin-bottom: 8px;
     }
-    .card-meta {
-      font-size: 12px;
-      color: var(--meta-color, #666);
+    
+    strong { font-weight: 600; }
+    em { font-style: italic; }
+    
+    /* 分隔线 */
+    hr {
+      border: none;
+      border-top: 1px solid var(--quote-border);
+      margin: 32px 0;
     }
-    .card-content {
-      line-height: 1.6;
+    
+    /* 空内容提示 */
+    .empty-content {
+      color: var(--meta-color);
+      font-size: 16px;
+      text-align: center;
+      padding: 60px 20px;
+    }
+    
+    /* 视频/图片容器 */
+    figure {
+      margin: 24px 0;
+      text-align: center;
+    }
+    figcaption {
+      color: var(--meta-color);
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    video {
+      max-width: 100%;
+      border-radius: 8px;
     }
   </style>
 </head>
 <body>
-  <div class="card-container">
-    <header class="card-header">
-      <h1 class="card-title">${card.metadata.name}</h1>
-      <div class="card-meta">
-        ${card.metadata.author ? `作者: ${card.metadata.author}` : ''}
-        ${card.metadata.created_at ? ` | 创建于: ${new Date(card.metadata.created_at).toLocaleDateString('zh-CN')}` : ''}
-      </div>
-    </header>
-    <main class="card-content">
-      ${card.metadata.description ?? '暂无内容'}
-    </main>
+  <div class="content">
+    ${contentHtml}
   </div>
-  <script>
-    // 通知父窗口卡片已加载
-    window.parent.postMessage({ type: 'card:ready', cardId: '${card.id}' }, '*');
-
-    // 监听消息
-    window.addEventListener('message', (event) => {
-      const { type, data } = event.data || {};
-      if (type === 'theme:change') {
-        document.documentElement.dataset.theme = data.theme;
-      }
-    });
-  </script>
 </body>
 </html>`;
+  }
+
+  /**
+   * 渲染单个基础卡片（简洁版 - 无边框无标题）
+   */
+  private renderBaseCard(baseCard: { id: string; type: string; config: any; content: string }): string {
+    let content = '';
+    
+    switch (baseCard.type) {
+      case 'RichTextCard':
+        content = baseCard.content || baseCard.config?.content_text || '';
+        break;
+        
+      case 'MarkdownCard':
+        content = this.simpleMarkdownToHtml(baseCard.content || baseCard.config?.content_text || '');
+        break;
+        
+      case 'ImageCard':
+        const imgSrc = baseCard.config?.image_file || '';
+        const imgCaption = baseCard.config?.caption || '';
+        content = `
+          <figure>
+            <img src="${this.escapeHtml(imgSrc)}" alt="">
+            ${imgCaption ? `<figcaption>${this.escapeHtml(imgCaption)}</figcaption>` : ''}
+          </figure>
+        `;
+        break;
+        
+      case 'VideoCard':
+        const videoSrc = baseCard.config?.video_file || '';
+        const poster = baseCard.config?.cover_image || '';
+        content = `
+          <figure>
+            <video controls ${poster ? `poster="${this.escapeHtml(poster)}"` : ''}>
+              <source src="${this.escapeHtml(videoSrc)}" type="video/mp4">
+            </video>
+          </figure>
+        `;
+        break;
+        
+      default:
+        content = baseCard.content || '';
+    }
+    
+    return `<div class="base-card-content">${content}</div>`;
+  }
+
+  /**
+   * 简单的 Markdown 转 HTML
+   */
+  private simpleMarkdownToHtml(markdown: string): string {
+    if (!markdown) return '';
+    
+    return markdown
+      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+      .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+  }
+
+  /**
+   * 转义 HTML 特殊字符
+   */
+  private escapeHtml(text: string): string {
+    if (!text) return '';
+    const map: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+    return String(text).replace(/[&<>"']/g, char => map[char]);
   }
 
   /**

@@ -4,7 +4,7 @@
  * @module @renderer/App
  */
 import { onMounted, onUnmounted, ref, provide } from 'vue';
-import { MainLayout } from './components/layout/MainLayout.vue';
+import MainLayout from './components/layout/MainLayout.vue';
 import { useViewerApp } from './composables';
 import { logger, eventBus } from './services';
 import { EVENTS } from '@common/constants';
@@ -47,6 +47,13 @@ onUnmounted(async () => {
     await viewerApp.destroy();
   }
 });
+
+// 重新加载页面
+function handleReload(): void {
+  if (typeof window !== 'undefined' && window.location) {
+    window.location.reload();
+  }
+}
 </script>
 
 <template>
@@ -62,7 +69,7 @@ onUnmounted(async () => {
       <div class="chips-viewer-app__error-icon">❌</div>
       <h2>初始化失败</h2>
       <p>{{ initError }}</p>
-      <button @click="() => window.location.reload()">重新加载</button>
+      <button @click="handleReload">重新加载</button>
     </div>
 
     <!-- 主布局 -->

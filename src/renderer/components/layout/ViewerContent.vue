@@ -85,25 +85,39 @@ const handleDrop = async (event: DragEvent): Promise<void> => {
   event.preventDefault();
   isDragOver.value = false;
 
+  console.log('[ViewerContent] handleDrop triggered');
+
   const files = event.dataTransfer?.files;
+  console.log('[ViewerContent] Files dropped:', files?.length);
+
   if (files && files.length > 0) {
     const file = files[0];
     const fileName = file.name.toLowerCase();
+    console.log('[ViewerContent] File name:', fileName);
 
     // 检查文件扩展名
     if (fileName.endsWith('.card') || fileName.endsWith('.box')) {
       const type = fileName.endsWith('.card') ? 'card' : 'box';
       // 使用 file.path 获取完整路径（Electron 环境）
-      const path = (file as File & { path?: string }).path ?? file.name;
+      const filePath = (file as File & { path?: string }).path;
+      console.log('[ViewerContent] File path from Electron:', filePath);
+
+      const path = filePath ?? file.name;
+      console.log('[ViewerContent] Final path:', path);
+      console.log('[ViewerContent] renderRef.value:', renderRef.value);
 
       try {
+        console.log('[ViewerContent] Calling navigate with:', { type, path });
         await navigate({
           type,
           path,
         });
+        console.log('[ViewerContent] Navigate completed');
       } catch (err) {
-        console.error('Failed to open dropped file:', err);
+        console.error('[ViewerContent] Failed to open dropped file:', err);
       }
+    } else {
+      console.log('[ViewerContent] File extension not supported:', fileName);
     }
   }
 };
@@ -131,8 +145,12 @@ const handleCloseError = (): void => {
  * 设置渲染容器
  */
 onMounted(() => {
+  console.log('[ViewerContent] onMounted, renderRef.value:', renderRef.value);
   if (renderRef.value) {
+    console.log('[ViewerContent] Setting container');
     setContainer(renderRef.value);
+  } else {
+    console.warn('[ViewerContent] renderRef is null in onMounted');
   }
 });
 
@@ -168,8 +186,8 @@ onUnmounted(() => {
     <!-- 空状态 -->
     <ContentEmpty v-else-if="!hasContent" />
 
-    <!-- 内容渲染区 -->
-    <div v-else ref="renderRef" class="viewer-content__render">
+    <!-- 内容渲染区（始终存在，通过 v-show 控制显示） -->
+    <div ref="renderRef" class="viewer-content__render" :class="{ 'viewer-content__render--hidden': !hasContent }">
       <!-- 卡片/箱子内容会被挂载到这里 -->
       <slot />
     </div>
@@ -185,78 +203,68 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/**
- * 内容区样式
- */
 .viewer-content {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: auto;
+  background-color: var(--bg-color, #fff);
+}
+
+.viewer-content--empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--viewer-content-bg, #ffffff);
 }
 
-/* 内容渲染区 */
 .viewer-content__render {
   width: 100%;
   height: 100%;
-  transform-origin: top left;
-  transition: transform 0.2s ease;
 }
 
-/* 拖拽悬停样式 */
-.viewer-content--drag-over {
-  background-color: var(--viewer-drag-bg, rgba(24, 144, 255, 0.05));
+.viewer-content__render--hidden {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 
-/* 拖拽提示遮罩 */
+/* 拖拽提示 */
 .viewer-content__drop-overlay {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(4px);
   z-index: 100;
 }
 
 .viewer-content__drop-hint {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 32px 48px;
-  background-color: var(--viewer-card-bg, #ffffff);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}
-
-.viewer-content__drop-icon {
-  font-size: 48px;
+  padding: 24px 40px;
+  background: var(--hint-bg, #fff);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .viewer-content__drop-text {
-  font-size: 18px;
-  color: var(--viewer-text-color, #333333);
+  font-size: 16px;
+  color: var(--text-color, #333);
 }
 
-/* 暗色主题 */
+.viewer-content__drop-icon {
+  display: none;
+}
+
 :global(.theme-dark) .viewer-content {
-  --viewer-content-bg: #1e1e1e;
-  --viewer-drag-bg: rgba(64, 158, 255, 0.1);
-  --viewer-card-bg: #2a2a2a;
-  --viewer-text-color: #e0e0e0;
+  --bg-color: #1a1a1a;
+  --hint-bg: #2a2a2a;
+  --text-color: #e0e0e0;
 }
 
-/* 亮色主题 */
 :global(.theme-light) .viewer-content {
-  --viewer-content-bg: #ffffff;
-  --viewer-drag-bg: rgba(24, 144, 255, 0.05);
-  --viewer-card-bg: #ffffff;
-  --viewer-text-color: #333333;
+  --bg-color: #fff;
+  --hint-bg: #fff;
+  --text-color: #333;
 }
 </style>

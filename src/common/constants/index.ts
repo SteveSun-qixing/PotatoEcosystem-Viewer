@@ -59,6 +59,7 @@ export const IPC_CHANNELS = {
   // 文件操作
   FILE_OPEN: 'file:open',
   FILE_OPEN_DIALOG: 'file:open-dialog',
+  FILE_READ: 'file:read',
   FILE_RECENT: 'file:recent',
 
   // 菜单操作

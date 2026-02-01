@@ -189,6 +189,9 @@ export class ViewerApp implements IViewerApp {
   async openCard(path: string, options?: Partial<CardRenderOptions & OpenContentOptions>): Promise<void> {
     this.ensureReady();
     this.logger.info('Opening card', { path });
+    console.log('[ViewerApp] openCard called with path:', path);
+    console.log('[ViewerApp] this.container:', this.container);
+    console.log('[ViewerApp] options?.container:', options?.container);
 
     try {
       this.setState('loading');
@@ -196,6 +199,7 @@ export class ViewerApp implements IViewerApp {
 
       // 获取渲染容器
       const container = options?.container ?? this.container;
+      console.log('[ViewerApp] Final container:', container);
       if (!container) {
         throw new Error('No container provided for rendering');
       }

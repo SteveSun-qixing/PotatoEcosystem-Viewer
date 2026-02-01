@@ -19,7 +19,7 @@ function createWindow(): void {
     minHeight: 600,
     title: 'Chips Viewer',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
@@ -30,7 +30,7 @@ function createWindow(): void {
   // 开发模式加载 localhost，生产模式加载打包文件
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // DevTools 可通过 Cmd+Option+I 手动打开
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
@@ -82,6 +82,18 @@ function setupIPC(): void {
       ],
     });
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  // 读取文件
+  ipcMain.handle(IPC_CHANNELS.FILE_READ, async (_event, filePath: string) => {
+    const { readFile } = await import('fs/promises');
+    try {
+      const buffer = await readFile(filePath);
+      return buffer;
+    } catch (error) {
+      console.error('Failed to read file:', filePath, error);
+      throw error;
+    }
   });
 }
 

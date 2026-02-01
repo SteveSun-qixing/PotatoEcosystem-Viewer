@@ -20,7 +20,13 @@ const electronAPI = {
   file: {
     openDialog: (): Promise<string | null> =>
       ipcRenderer.invoke(IPC_CHANNELS.FILE_OPEN_DIALOG),
+    read: (filePath: string): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, filePath),
   },
+
+  // 便捷方法
+  readFile: (filePath: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, filePath),
 
   // 平台信息
   platform: process.platform,
