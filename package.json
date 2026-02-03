@@ -25,10 +25,9 @@
     "format:check": "prettier --check src"
   },
   "dependencies": {
-    "@chips/components": "file:../Chips-ComponentLibrary",
-    "@chips/core": "file:../Chips-core/pkg",
-    "@chips/foundation": "file:../Chips-Foundation",
-    "@chips/sdk": "file:../Chips-SDK",
+    "@chips/components": "workspace:*",
+    "@chips/foundation": "workspace:*",
+    "@chips/sdk": "workspace:*",
     "js-yaml": "^4.1.1",
     "jszip": "^3.10.1",
     "pinia": "^2.1.0",
