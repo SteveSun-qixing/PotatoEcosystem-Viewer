@@ -1,153 +1,136 @@
 /**
- * Viewer 状态管理
+ * 查看器状态管理
  * @module @renderer/store/viewer
+ *
+ * 管理查看器的核心状态：当前打开的卡片、加载状态、主题等。
  */
 import { defineStore } from 'pinia';
-import type {
-  ViewerState,
-  CurrentContent,
-  ViewOptions,
-  NavigationHistoryEntry,
-} from '@common/types';
+import { ref, computed } from 'vue';
+import type { ParsedCardMetadata } from '@chips/sdk';
 
-export interface ViewerStoreState {
-  // 应用状态
-  state: ViewerState;
-  error: string | null;
+/** 查看器状态枚举 */
+export type ViewerState = 'empty' | 'loading' | 'ready' | 'error';
 
-  // 当前内容
-  currentContent: CurrentContent;
+/** 主题类型 */
+export type ThemeMode = 'light' | 'dark' | 'system';
 
-  // 视图选项
-  viewOptions: ViewOptions;
+export const useViewerStore = defineStore('viewer', () => {
+  // ========== 状态 ==========
 
-  // 导航
-  navigationHistory: NavigationHistoryEntry[];
-  currentHistoryIndex: number;
+  /** 当前状态 */
+  const state = ref<ViewerState>('empty');
 
-  // 主题
-  currentTheme: string;
+  /** 当前卡片元数据 */
+  const cardMetadata = ref<ParsedCardMetadata | null>(null);
 
-  // 侧边栏
-  sidebarVisible: boolean;
-  sidebarWidth: number;
+  /** 当前文件路径 */
+  const filePath = ref<string | null>(null);
 
-  // 加载状态
-  isLoading: boolean;
-  loadingMessage: string;
-}
+  /** 错误信息 */
+  const errorMessage = ref<string | null>(null);
 
-export const useViewerStore = defineStore('viewer', {
-  state: (): ViewerStoreState => ({
-    state: 'idle',
-    error: null,
-    currentContent: {
-      type: 'none',
-      data: null,
-      path: null,
-      renderResult: null,
-    },
-    viewOptions: {
-      zoom: 1,
-      fitMode: 'auto',
-      showSidebar: true,
-      showToolbar: true,
-      showStatusBar: true,
-    },
-    navigationHistory: [],
-    currentHistoryIndex: -1,
-    currentTheme: 'system',
-    sidebarVisible: true,
-    sidebarWidth: 280,
-    isLoading: false,
-    loadingMessage: '',
-  }),
+  /** 主题模式 */
+  const theme = ref<ThemeMode>('system');
 
-  getters: {
-    isReady: state => state.state === 'ready',
-    hasContent: state => state.currentContent.type !== 'none',
-    canGoBack: state => state.currentHistoryIndex > 0,
-    canGoForward: state =>
-      state.currentHistoryIndex < state.navigationHistory.length - 1,
-    currentEntry: state =>
-      state.navigationHistory[state.currentHistoryIndex] ?? null,
-  },
+  /** 缩放比例（百分比） */
+  const zoom = ref(100);
 
-  actions: {
-    // 状态管理
-    setState(newState: ViewerState): void {
-      this.state = newState;
-    },
+  // ========== 计算属性 ==========
 
-    setError(error: string | null): void {
-      this.error = error;
-      if (error) {
-        this.state = 'error';
-      }
-    },
+  /** 当前卡片名称 */
+  const cardName = computed(() => cardMetadata.value?.name ?? '');
 
-    // 内容管理
-    setCurrentContent(content: CurrentContent): void {
-      this.currentContent = content;
-    },
+  /** 是否有打开的卡片 */
+  const hasCard = computed(() => state.value === 'ready' && cardMetadata.value !== null);
 
-    clearContent(): void {
-      this.currentContent = {
-        type: 'none',
-        data: null,
-        path: null,
-        renderResult: null,
-      };
-    },
+  /** 是否正在加载 */
+  const isLoading = computed(() => state.value === 'loading');
 
-    // 视图选项
-    setZoom(zoom: number): void {
-      this.viewOptions.zoom = Math.max(0.1, Math.min(5, zoom));
-    },
+  /** 是否有错误 */
+  const hasError = computed(() => state.value === 'error');
 
-    setFitMode(mode: ViewOptions['fitMode']): void {
-      this.viewOptions.fitMode = mode;
-    },
+  /** 是否空状态 */
+  const isEmpty = computed(() => state.value === 'empty');
 
-    toggleSidebar(): void {
-      this.sidebarVisible = !this.sidebarVisible;
-    },
+  // ========== 操作方法 ==========
 
-    setSidebarWidth(width: number): void {
-      this.sidebarWidth = Math.max(200, Math.min(500, width));
-    },
+  /** 开始加载卡片 */
+  function startLoading(path: string): void {
+    state.value = 'loading';
+    filePath.value = path;
+    errorMessage.value = null;
+    cardMetadata.value = null;
+  }
 
-    // 导航
-    addToHistory(entry: NavigationHistoryEntry): void {
-      // 清除当前位置之后的历史
-      this.navigationHistory = this.navigationHistory.slice(
-        0,
-        this.currentHistoryIndex + 1
-      );
-      this.navigationHistory.push(entry);
-      this.currentHistoryIndex = this.navigationHistory.length - 1;
-    },
+  /** 卡片加载完成 */
+  function setReady(metadata: ParsedCardMetadata): void {
+    state.value = 'ready';
+    cardMetadata.value = metadata;
+    errorMessage.value = null;
+  }
 
-    goToHistoryIndex(index: number): void {
-      if (index >= 0 && index < this.navigationHistory.length) {
-        this.currentHistoryIndex = index;
-      }
-    },
+  /** 设置错误 */
+  function setError(message: string): void {
+    state.value = 'error';
+    errorMessage.value = message;
+  }
 
-    clearHistory(): void {
-      this.navigationHistory = [];
-      this.currentHistoryIndex = -1;
-    },
+  /** 关闭卡片 */
+  function closeCard(): void {
+    state.value = 'empty';
+    cardMetadata.value = null;
+    filePath.value = null;
+    errorMessage.value = null;
+  }
 
-    // 主题
-    setTheme(theme: string): void {
-      this.currentTheme = theme;
-    },
+  /** 设置主题 */
+  function setTheme(mode: ThemeMode): void {
+    theme.value = mode;
+  }
 
-    // 加载状态
-    setLoading(loading: boolean, message?: string): void {
-      this.isLoading = loading;
-      this.loadingMessage = message ?? '';
-    },
-  },
+  /** 设置缩放 */
+  function setZoom(value: number): void {
+    zoom.value = Math.max(25, Math.min(400, value));
+  }
+
+  /** 放大 */
+  function zoomIn(): void {
+    setZoom(zoom.value + 10);
+  }
+
+  /** 缩小 */
+  function zoomOut(): void {
+    setZoom(zoom.value - 10);
+  }
+
+  /** 重置缩放 */
+  function zoomReset(): void {
+    setZoom(100);
+  }
+
+  return {
+    // 状态
+    state,
+    cardMetadata,
+    filePath,
+    errorMessage,
+    theme,
+    zoom,
+    // 计算属性
+    cardName,
+    hasCard,
+    isLoading,
+    hasError,
+    isEmpty,
+    // 操作
+    startLoading,
+    setReady,
+    setError,
+    closeCard,
+    setTheme,
+    setZoom,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+  };
 });

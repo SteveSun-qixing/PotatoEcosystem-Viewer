@@ -1,15 +1,18 @@
 /**
  * Electron 主进程入口
  * @module @main/index
+ *
+ * 查看器主进程职责：
+ * - 窗口管理（创建、最小化、最大化、关闭、全屏）
+ * - 文件对话框（打开 .card 文件）
+ * - 文件读取（将文件数据传递给渲染进程）
+ * - 命令行参数处理（直接打开指定文件）
  */
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'path';
-import { IPC_CHANNELS } from '@common/constants';
-import { logger } from './services/Logger';
-import { translate } from './services/i18n';
+import { readFile } from 'fs/promises';
 
 let mainWindow: BrowserWindow | null = null;
-const log = logger.createChild('Main');
 
 /**
  * 创建主窗口
@@ -18,9 +21,9 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
-    minHeight: 600,
-    title: translate('viewer.title'),
+    minWidth: 640,
+    minHeight: 480,
+    title: 'Chips Viewer',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       nodeIntegration: false,
@@ -33,7 +36,6 @@ function createWindow(): void {
   // 开发模式加载 localhost，生产模式加载打包文件
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
-    // DevTools 可通过 Cmd+Option+I 手动打开
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
@@ -54,11 +56,9 @@ function createWindow(): void {
  */
 function setupIPC(): void {
   // 窗口操作
-  ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
-    mainWindow?.minimize();
-  });
+  ipcMain.on('window:minimize', () => mainWindow?.minimize());
 
-  ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
+  ipcMain.on('window:maximize', () => {
     if (mainWindow?.isMaximized()) {
       mainWindow.unmaximize();
     } else {
@@ -66,36 +66,39 @@ function setupIPC(): void {
     }
   });
 
-  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
-    mainWindow?.close();
-  });
+  ipcMain.on('window:close', () => mainWindow?.close());
 
-  ipcMain.on(IPC_CHANNELS.WINDOW_FULLSCREEN, () => {
+  ipcMain.on('window:fullscreen', () => {
     mainWindow?.setFullScreen(!mainWindow.isFullScreen());
   });
 
-  // 文件操作
-  ipcMain.handle(IPC_CHANNELS.FILE_OPEN_DIALOG, async () => {
-    const { dialog } = await import('electron');
+  // 文件打开对话框
+  ipcMain.handle('file:open-dialog', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openFile'],
       filters: [
-        { name: translate('dialog.chipsFiles'), extensions: ['card', 'box'] },
-        { name: translate('dialog.allFiles'), extensions: ['*'] },
+        { name: 'Chips Card', extensions: ['card'] },
+        { name: 'All Files', extensions: ['*'] },
       ],
     });
     return result.canceled ? null : result.filePaths[0];
   });
 
   // 读取文件
-  ipcMain.handle(IPC_CHANNELS.FILE_READ, async (_event, filePath: string) => {
-    const { readFile } = await import('fs/promises');
+  ipcMain.handle('file:read', async (_event, filePath: string) => {
     try {
       const buffer = await readFile(filePath);
       return buffer;
     } catch (error) {
-      log.error(translate('errors.fileReadFailed'), error as Error, { filePath });
+      console.error('File read failed:', filePath, error);
       throw error;
+    }
+  });
+
+  // 设置窗口标题
+  ipcMain.on('window:set-title', (_event, title: string) => {
+    if (mainWindow && title) {
+      mainWindow.setTitle(title);
     }
   });
 }

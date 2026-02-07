@@ -1,11 +1,5 @@
 /**
- * 服务层导出索引
- * @module @renderer/services
+ * 服务层导出
  */
-
-export { EventBus, eventBus } from './EventBus';
-export { Logger, logger } from './Logger';
-export { SDKService, sdkService } from './SDKService';
-export { loadWorkspaceBaseCardPlugins } from './BaseCardPluginLoader';
-export { translate, getLocale, setLocale, supportedLocales } from './i18n';
-export type { SDKServiceOptions } from '@common/interfaces';
+export { CardService, getCardService } from './CardService';
+export type { CardRenderOptions, CardOpenResult } from './CardService';

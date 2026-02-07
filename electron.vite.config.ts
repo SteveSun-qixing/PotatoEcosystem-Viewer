@@ -13,11 +13,6 @@ export default defineConfig({
         },
       },
     },
-    resolve: {
-      alias: {
-        '@common': resolve(__dirname, 'src/common'),
-      },
-    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
@@ -27,11 +22,6 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/preload/index.ts'),
         },
-      },
-    },
-    resolve: {
-      alias: {
-        '@common': resolve(__dirname, 'src/common'),
       },
     },
   },
@@ -46,7 +36,6 @@ export default defineConfig({
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
-        '@common': resolve(__dirname, 'src/common'),
         '@renderer': resolve(__dirname, 'src/renderer'),
       },
     },

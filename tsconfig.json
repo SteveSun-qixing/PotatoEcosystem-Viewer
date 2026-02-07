@@ -14,17 +14,15 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@common/*": ["./src/common/*"],
       "@renderer/*": ["./src/renderer/*"],
       "@main/*": ["./src/main/*"]
     },
-    "types": ["node", "vitest/globals"]
+    "types": ["node"]
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.d.ts",
-    "src/**/*.vue",
-    "tests/**/*.ts"
+    "src/**/*.vue"
   ],
   "exclude": ["node_modules", "dist", "dist-electron"]
 }

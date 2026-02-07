@@ -1,10 +1,5 @@
 /**
- * Store 模块导出
- * @module @renderer/store
+ * Store 导出
  */
-
 export { useViewerStore } from './viewer';
-export type { ViewerStoreState } from './viewer';
-
-export { useConfigStore } from './config';
-export type { ConfigStoreState } from './config';
+export type { ViewerState, ThemeMode } from './viewer';

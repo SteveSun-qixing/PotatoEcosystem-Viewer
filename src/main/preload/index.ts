@@ -1,41 +1,46 @@
 /**
  * 预加载脚本
- * 在渲染进程中安全暴露 API
- * @module @main/preload
+ *
+ * 在渲染进程中安全暴露 Electron API。
+ * 仅暴露查看器需要的最小 API 集合。
  */
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import { IPC_CHANNELS } from '@common/constants';
+import { contextBridge, ipcRenderer } from 'electron';
 
-// 暴露给渲染进程的 API
+// webUtils is available in Electron 28+
+let webUtils: { getPathForFile: (file: File) => string } | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  webUtils = require('electron').webUtils;
+} catch {
+  // Older Electron version without webUtils
+}
+
 const electronAPI = {
-  // 窗口操作
+  /** 窗口操作 */
   window: {
-    minimize: (): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
-    maximize: (): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
-    close: (): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
-    fullscreen: (): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_FULLSCREEN),
+    minimize: (): void => ipcRenderer.send('window:minimize'),
+    maximize: (): void => ipcRenderer.send('window:maximize'),
+    close: (): void => ipcRenderer.send('window:close'),
+    fullscreen: (): void => ipcRenderer.send('window:fullscreen'),
+    setTitle: (title: string): void => ipcRenderer.send('window:set-title', title),
   },
 
-  // 文件操作
+  /** 文件操作 */
   file: {
     openDialog: (): Promise<string | null> =>
-      ipcRenderer.invoke(IPC_CHANNELS.FILE_OPEN_DIALOG),
+      ipcRenderer.invoke('file:open-dialog'),
     read: (filePath: string): Promise<ArrayBuffer> =>
-      ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, filePath),
+      ipcRenderer.invoke('file:read', filePath),
     getPathForFile: (file: File): string => {
       try {
-        return webUtils.getPathForFile(file);
+        return webUtils?.getPathForFile(file) ?? '';
       } catch {
         return '';
       }
     },
   },
 
-  // 便捷方法
-  readFile: (filePath: string): Promise<ArrayBuffer> =>
-    ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, filePath),
-
-  // 平台信息
+  /** 平台信息 */
   platform: process.platform,
 };
 
