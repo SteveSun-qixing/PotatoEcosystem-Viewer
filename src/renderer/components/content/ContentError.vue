@@ -12,7 +12,7 @@ import { useTranslation } from '@renderer/composables/useTranslation';
 const { t } = useTranslation();
 
 // Props
-const props = defineProps<{
+defineProps<{
   /** 错误信息 */
   error: string;
 }>();

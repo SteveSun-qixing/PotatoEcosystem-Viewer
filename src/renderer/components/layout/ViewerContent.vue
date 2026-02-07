@@ -9,16 +9,20 @@
  * - 缩放功能
  * - 加载、错误、空状态显示
  */
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useViewerStore } from '@renderer/store/viewer';
 import { useViewerApp } from '@renderer/composables/useViewerApp';
+import { useTranslation } from '@renderer/composables/useTranslation';
+import { logger } from '@renderer/services';
 import ContentEmpty from '../content/ContentEmpty.vue';
 import ContentLoading from '../content/ContentLoading.vue';
 import ContentError from '../content/ContentError.vue';
 
 // Store 和 Composables
 const viewerStore = useViewerStore();
-const { viewerApp, navigate, setContainer } = useViewerApp();
+const { navigate, setContainer } = useViewerApp();
+const { t } = useTranslation();
+const log = logger.createChild('ViewerContent');
 
 // DOM 引用
 const contentRef = ref<HTMLElement | null>(null);
@@ -32,18 +36,80 @@ const currentContent = computed(() => viewerStore.currentContent);
 const isLoading = computed(() => viewerStore.isLoading);
 const loadingMessage = computed(() => viewerStore.loadingMessage);
 const error = computed(() => viewerStore.error);
-const zoom = computed(() => viewerStore.viewOptions.zoom);
 const hasContent = computed(() => currentContent.value.type !== 'none');
 
-/**
- * 监听缩放变化，应用缩放样式
- */
-watch(zoom, newZoom => {
-  if (renderRef.value) {
-    renderRef.value.style.transform = `scale(${newZoom})`;
-    renderRef.value.style.transformOrigin = 'top left';
+const parseFileUri = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
   }
-});
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'file:') {
+      return null;
+    }
+    let pathname = decodeURIComponent(url.pathname);
+    if (/^\/[a-zA-Z]:\//.test(pathname)) {
+      pathname = pathname.slice(1);
+    }
+    return pathname;
+  } catch {
+    return null;
+  }
+};
+
+const extractPathFromTransferPayload = (dataTransfer: DataTransfer): string | null => {
+  const uriList = dataTransfer.getData('text/uri-list');
+  if (uriList) {
+    const lines = uriList
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'));
+
+    for (const line of lines) {
+      const uriPath = parseFileUri(line);
+      if (uriPath) {
+        return uriPath;
+      }
+    }
+  }
+
+  const plainText = dataTransfer.getData('text/plain');
+  if (plainText) {
+    const uriPath = parseFileUri(plainText);
+    if (uriPath) {
+      return uriPath;
+    }
+
+    const textPath = plainText.trim();
+    if (textPath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(textPath)) {
+      return textPath;
+    }
+  }
+
+  return null;
+};
+
+const resolveDroppedFilePath = (event: DragEvent, file: File): string | null => {
+  const fileWithPath = file as File & { path?: string };
+  if (typeof fileWithPath.path === 'string' && fileWithPath.path.trim()) {
+    return fileWithPath.path;
+  }
+
+  if (window.electronAPI?.file?.getPathForFile) {
+    const pathFromElectron = window.electronAPI.file.getPathForFile(file);
+    if (typeof pathFromElectron === 'string' && pathFromElectron.trim()) {
+      return pathFromElectron;
+    }
+  }
+
+  if (event.dataTransfer) {
+    return extractPathFromTransferPayload(event.dataTransfer);
+  }
+
+  return null;
+};
 
 /**
  * 处理拖拽进入
@@ -85,39 +151,32 @@ const handleDrop = async (event: DragEvent): Promise<void> => {
   event.preventDefault();
   isDragOver.value = false;
 
-  console.log('[ViewerContent] handleDrop triggered');
-
   const files = event.dataTransfer?.files;
-  console.log('[ViewerContent] Files dropped:', files?.length);
-
   if (files && files.length > 0) {
     const file = files[0];
     const fileName = file.name.toLowerCase();
-    console.log('[ViewerContent] File name:', fileName);
 
     // 检查文件扩展名
     if (fileName.endsWith('.card') || fileName.endsWith('.box')) {
       const type = fileName.endsWith('.card') ? 'card' : 'box';
-      // 使用 file.path 获取完整路径（Electron 环境）
-      const filePath = (file as File & { path?: string }).path;
-      console.log('[ViewerContent] File path from Electron:', filePath);
-
-      const path = filePath ?? file.name;
-      console.log('[ViewerContent] Final path:', path);
-      console.log('[ViewerContent] renderRef.value:', renderRef.value);
+      const path = resolveDroppedFilePath(event, file);
+      if (!path) {
+        const message = type === 'card' ? t('content.error.openCardFailed') : t('content.error.openBoxFailed');
+        viewerStore.setError(message);
+        log.error('Dropped file path cannot be resolved', new Error(message), { fileName });
+        return;
+      }
 
       try {
-        console.log('[ViewerContent] Calling navigate with:', { type, path });
         await navigate({
           type,
           path,
         });
-        console.log('[ViewerContent] Navigate completed');
       } catch (err) {
-        console.error('[ViewerContent] Failed to open dropped file:', err);
+        log.error('Failed to open dropped file', err as Error, { type, path });
       }
     } else {
-      console.log('[ViewerContent] File extension not supported:', fileName);
+      log.warn('Unsupported file extension', { fileName });
     }
   }
 };
@@ -145,21 +204,16 @@ const handleCloseError = (): void => {
  * 设置渲染容器
  */
 onMounted(() => {
-  console.log('[ViewerContent] onMounted, renderRef.value:', renderRef.value);
   if (renderRef.value) {
-    console.log('[ViewerContent] Setting container');
     setContainer(renderRef.value);
   } else {
-    console.warn('[ViewerContent] renderRef is null in onMounted');
+    log.warn('Render container is null on mount');
   }
 });
 
 /**
  * 清理
  */
-onUnmounted(() => {
-  // 清理工作（如果需要）
-});
 </script>
 
 <template>
@@ -183,20 +237,21 @@ onUnmounted(() => {
     <!-- 错误状态 -->
     <ContentError v-else-if="error" :error="error" @retry="handleRetry" @close="handleCloseError" />
 
-    <!-- 空状态 -->
-    <ContentEmpty v-else-if="!hasContent" />
+    <div v-else class="viewer-content__body">
+      <ContentEmpty v-if="!hasContent" />
 
-    <!-- 内容渲染区（始终存在，通过 v-show 控制显示） -->
-    <div ref="renderRef" class="viewer-content__render" :class="{ 'viewer-content__render--hidden': !hasContent }">
-      <!-- 卡片/箱子内容会被挂载到这里 -->
-      <slot />
+      <!-- 内容渲染区（始终存在，通过 v-show 控制显示） -->
+      <div ref="renderRef" class="viewer-content__render" :class="{ 'viewer-content__render--hidden': !hasContent }">
+        <!-- 卡片/箱子内容会被挂载到这里 -->
+        <slot />
+      </div>
     </div>
 
     <!-- 拖拽提示遮罩 -->
     <div v-if="isDragOver" class="viewer-content__drop-overlay">
       <div class="viewer-content__drop-hint">
         <span class="viewer-content__drop-icon">📂</span>
-        <span class="viewer-content__drop-text">释放以打开文件</span>
+        <span class="viewer-content__drop-text">{{ t('content.drop.hint') }}</span>
       </div>
     </div>
   </div>
@@ -208,7 +263,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: var(--bg-color, #fff);
+  background: var(--bg-color, #fff);
 }
 
 .viewer-content--empty {
@@ -217,15 +272,47 @@ onUnmounted(() => {
   justify-content: center;
 }
 
+.viewer-content__body {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
 .viewer-content__render {
   width: 100%;
   height: 100%;
+  min-height: 100%;
+  padding: 24px;
+  overflow: auto;
 }
 
 .viewer-content__render--hidden {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
+}
+
+.viewer-content__render :deep(.chips-viewer-card) {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #e2e7ee;
+  box-shadow: 0 10px 24px rgba(33, 41, 53, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.viewer-content__render :deep(.chips-viewer-base-card-empty),
+.viewer-content__render :deep(.chips-viewer-card-empty) {
+  padding: 14px 16px;
+  border: 1px dashed #c3cad3;
+  border-radius: 10px;
+  color: #6f7782;
+  font-size: 13px;
+  background: #f7f9fc;
 }
 
 /* 拖拽提示 */
@@ -256,15 +343,28 @@ onUnmounted(() => {
   display: none;
 }
 
+:global(.theme-light) .viewer-content {
+  --bg-color: #fff;
+  --hint-bg: #fff;
+  --text-color: #333;
+}
+
 :global(.theme-dark) .viewer-content {
   --bg-color: #1a1a1a;
   --hint-bg: #2a2a2a;
   --text-color: #e0e0e0;
 }
 
-:global(.theme-light) .viewer-content {
-  --bg-color: #fff;
-  --hint-bg: #fff;
-  --text-color: #333;
+:global(.theme-dark) .viewer-content__render :deep(.chips-viewer-card) {
+  background: #20242b;
+  border-color: #363f4a;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+
+:global(.theme-dark) .viewer-content__render :deep(.chips-viewer-base-card-empty),
+:global(.theme-dark) .viewer-content__render :deep(.chips-viewer-card-empty) {
+  border-color: #485363;
+  background: #2a313a;
+  color: #c6d0dc;
 }
 </style>

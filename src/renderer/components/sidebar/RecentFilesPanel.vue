@@ -11,10 +11,12 @@
 import { ref, onMounted } from 'vue';
 import { useViewerApp } from '@renderer/composables/useViewerApp';
 import { useTranslation } from '@renderer/composables/useTranslation';
+import { logger, getLocale } from '@renderer/services';
 import { CACHE_KEYS } from '@common/constants';
 
 const { navigate } = useViewerApp();
 const { t } = useTranslation();
+const log = logger.createChild('RecentFilesPanel');
 
 // 最近文件类型
 interface RecentFile {
@@ -37,7 +39,7 @@ const loadRecentFiles = (): void => {
       recentFiles.value = JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to load recent files:', error);
+    log.error('Failed to load recent files', error as Error);
     recentFiles.value = [];
   }
 };
@@ -52,7 +54,7 @@ const handleOpenFile = async (file: RecentFile): Promise<void> => {
       path: file.path,
     });
   } catch (error) {
-    console.error('Failed to open file:', error);
+    log.error('Failed to open recent file', error as Error, { path: file.path });
   }
 };
 
@@ -75,13 +77,13 @@ const formatTime = (timestamp: string): string => {
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
     if (days === 0) {
-      return '今天';
+      return t('recent.time.today');
     } else if (days === 1) {
-      return '昨天';
+      return t('recent.time.yesterday');
     } else if (days < 7) {
-      return `${days} 天前`;
+      return t('recent.time.daysAgo', { days });
     } else {
-      return date.toLocaleDateString();
+      return date.toLocaleDateString(getLocale());
     }
   } catch {
     return timestamp;
@@ -92,7 +94,7 @@ const formatTime = (timestamp: string): string => {
  * 从路径获取文件名
  */
 const getFileName = (path: string): string => {
-  const parts = path.split('/');
+  const parts = path.split(/[/\\\\]/);
   return parts[parts.length - 1] || path;
 };
 

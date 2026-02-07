@@ -7,6 +7,7 @@ import type {
   PluginContext,
   CommandHandler,
   RendererDefinition,
+  LayoutRendererDefinition,
   PluginFileAPI,
   PluginStorageAPI,
   PluginThemeAPI,
@@ -92,6 +93,11 @@ export class PluginContextImpl implements PluginContext {
   private readonly rendererRegistry: Map<string, RendererDefinition>;
 
   /**
+   * 布局渲染器注册表引用
+   */
+  private readonly layoutRendererRegistry: Map<string, LayoutRendererDefinition>;
+
+  /**
    * 插件订阅的事件处理器
    */
   private readonly eventHandlers: Map<string, Set<(data: unknown) => void>> = new Map();
@@ -112,6 +118,11 @@ export class PluginContextImpl implements PluginContext {
   private readonly registeredRenderers: Set<string> = new Set();
 
   /**
+   * 已注册的布局渲染器类型（用于清理）
+   */
+  private readonly registeredLayoutRenderers: Set<string> = new Set();
+
+  /**
    * 上下文是否已销毁
    */
   private destroyed = false;
@@ -123,6 +134,7 @@ export class PluginContextImpl implements PluginContext {
    * @param eventBus - 事件总线实例
    * @param commandRegistry - 全局命令注册表
    * @param rendererRegistry - 全局渲染器注册表
+   * @param layoutRendererRegistry - 全局布局渲染器注册表
    * @param config - 插件初始配置
    */
   constructor(
@@ -130,6 +142,7 @@ export class PluginContextImpl implements PluginContext {
     eventBus: IEventBus,
     commandRegistry: Map<string, CommandHandler>,
     rendererRegistry: Map<string, RendererDefinition>,
+    layoutRendererRegistry: Map<string, LayoutRendererDefinition>,
     config?: Record<string, unknown>
   ) {
     this.pluginId = pluginId;
@@ -137,6 +150,7 @@ export class PluginContextImpl implements PluginContext {
     this.eventBus = eventBus;
     this.commandRegistry = commandRegistry;
     this.rendererRegistry = rendererRegistry;
+    this.layoutRendererRegistry = layoutRendererRegistry;
     this.config = config ?? {};
     this.logger = new Logger(`Plugin:${pluginId}`);
 
@@ -202,6 +216,28 @@ export class PluginContextImpl implements PluginContext {
     this.registeredRenderers.add(fullType);
 
     this.logger.debug('Renderer registered', { type: fullType, cardTypes: renderer.cardTypes });
+  };
+
+  /**
+   * 注册布局渲染器
+   *
+   * @param layoutType - 布局类型标识
+   * @param renderer - 布局渲染器定义
+   * @throws {Error} 如果布局渲染器类型已存在
+   */
+  registerLayoutRenderer = (layoutType: string, renderer: LayoutRendererDefinition): void => {
+    this.checkDestroyed();
+
+    const fullType = `${this.pluginId}:${layoutType}`;
+
+    if (this.layoutRendererRegistry.has(fullType)) {
+      throw new Error(`Layout renderer "${fullType}" already registered`);
+    }
+
+    this.layoutRendererRegistry.set(fullType, renderer);
+    this.registeredLayoutRenderers.add(fullType);
+
+    this.logger.debug('Layout renderer registered', { type: fullType, layoutType: renderer.layoutType });
   };
 
   /**
@@ -296,6 +332,7 @@ export class PluginContextImpl implements PluginContext {
    * - 取消所有事件订阅
    * - 移除所有命令注册
    * - 移除所有渲染器注册
+   * - 移除所有布局渲染器注册
    */
   destroy(): void {
     if (this.destroyed) {
@@ -321,6 +358,12 @@ export class PluginContextImpl implements PluginContext {
       this.rendererRegistry.delete(type);
     }
     this.registeredRenderers.clear();
+
+    // 清理布局渲染器注册
+    for (const type of this.registeredLayoutRenderers) {
+      this.layoutRendererRegistry.delete(type);
+    }
+    this.registeredLayoutRenderers.clear();
 
     this.destroyed = true;
 
@@ -534,6 +577,7 @@ export class PluginContextImpl implements PluginContext {
  * @param eventBus - 事件总线
  * @param commandRegistry - 命令注册表
  * @param rendererRegistry - 渲染器注册表
+ * @param layoutRendererRegistry - 布局渲染器注册表
  * @param config - 插件配置
  * @returns 插件上下文实例
  */
@@ -542,7 +586,8 @@ export function createPluginContext(
   eventBus: IEventBus,
   commandRegistry: Map<string, CommandHandler>,
   rendererRegistry: Map<string, RendererDefinition>,
+  layoutRendererRegistry: Map<string, LayoutRendererDefinition>,
   config?: Record<string, unknown>
 ): PluginContext {
-  return new PluginContextImpl(pluginId, eventBus, commandRegistry, rendererRegistry, config);
+  return new PluginContextImpl(pluginId, eventBus, commandRegistry, rendererRegistry, layoutRendererRegistry, config);
 }

@@ -5,8 +5,11 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'path';
 import { IPC_CHANNELS } from '@common/constants';
+import { logger } from './services/Logger';
+import { translate } from './services/i18n';
 
 let mainWindow: BrowserWindow | null = null;
+const log = logger.createChild('Main');
 
 /**
  * 创建主窗口
@@ -17,7 +20,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'Chips Viewer',
+    title: translate('viewer.title'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       nodeIntegration: false,
@@ -77,8 +80,8 @@ function setupIPC(): void {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openFile'],
       filters: [
-        { name: 'Chips Files', extensions: ['card', 'box'] },
-        { name: 'All Files', extensions: ['*'] },
+        { name: translate('dialog.chipsFiles'), extensions: ['card', 'box'] },
+        { name: translate('dialog.allFiles'), extensions: ['*'] },
       ],
     });
     return result.canceled ? null : result.filePaths[0];
@@ -91,7 +94,7 @@ function setupIPC(): void {
       const buffer = await readFile(filePath);
       return buffer;
     } catch (error) {
-      console.error('Failed to read file:', filePath, error);
+      log.error(translate('errors.fileReadFailed'), error as Error, { filePath });
       throw error;
     }
   });

@@ -9,6 +9,7 @@
  */
 import { computed } from 'vue';
 import { useTranslation } from '@renderer/composables/useTranslation';
+import { logger } from '@renderer/services';
 import type { CurrentContent } from '@common/types';
 
 // Props
@@ -18,6 +19,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useTranslation();
+const log = logger.createChild('OutlinePanel');
 
 // 大纲项类型
 interface OutlineItem {
@@ -49,7 +51,7 @@ const hasOutline = computed(() => outlineItems.value.length > 0);
  */
 const handleItemClick = (item: OutlineItem): void => {
   // TODO: 实现滚动到对应位置
-  console.log('Outline item clicked:', item);
+  log.debug('Outline item clicked', { item });
 };
 </script>
 

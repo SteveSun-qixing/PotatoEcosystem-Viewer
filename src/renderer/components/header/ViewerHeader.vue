@@ -15,6 +15,7 @@ import { computed } from 'vue';
 import { useViewerStore } from '@renderer/store/viewer';
 import { useViewerApp } from '@renderer/composables/useViewerApp';
 import { useTranslation } from '@renderer/composables/useTranslation';
+import { logger } from '@renderer/services';
 import NavigationButtons from './NavigationButtons.vue';
 import ZoomControls from '../toolbar/ZoomControls.vue';
 import ThemeToggle from '../toolbar/ThemeToggle.vue';
@@ -24,6 +25,7 @@ import WindowControls from './WindowControls.vue';
 const viewerStore = useViewerStore();
 const { navigate } = useViewerApp();
 const { t } = useTranslation();
+const log = logger.createChild('ViewerHeader');
 
 // 计算属性
 const currentContent = computed(() => viewerStore.currentContent);
@@ -52,7 +54,7 @@ const handleOpenFile = async (): Promise<void> => {
         await navigate({ type, path: result });
       }
     } catch (error) {
-      console.error('Failed to open file:', error);
+      log.error('Failed to open file', error as Error);
     }
   }
 };
@@ -62,7 +64,7 @@ const handleOpenFile = async (): Promise<void> => {
  */
 const handleMenuClick = (): void => {
   // TODO: 实现菜单功能
-  console.log('Menu clicked');
+  log.debug('Menu clicked');
 };
 </script>
 

@@ -2,6 +2,7 @@
  * 事件总线服务
  * @module @renderer/services/EventBus
  */
+import { logger } from './Logger';
 
 type EventHandler<T = unknown> = (data: T) => void;
 
@@ -18,6 +19,7 @@ interface EventSubscription {
 export class EventBus {
   private subscriptions: Map<string, EventSubscription[]> = new Map();
   private idCounter = 0;
+  private readonly log = logger.createChild('EventBus');
 
   /**
    * 订阅事件
@@ -79,7 +81,7 @@ export class EventBus {
           toRemove.push(sub.id);
         }
       } catch (error) {
-        console.error(`Event handler error for event "${event}":`, error);
+        this.log.error('Event handler error', error as Error, { event });
       }
     }
 

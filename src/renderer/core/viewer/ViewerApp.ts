@@ -4,12 +4,12 @@
  */
 import type {
   IViewerApp,
-  ICardManager,
   IBoxManager,
   INavigationController,
   IConfigManager,
   IEventBus,
   ILogger,
+  IPluginManager,
 } from '@common/interfaces';
 import type {
   ViewerState,
@@ -23,9 +23,11 @@ import { CardManager } from './CardManager';
 import { BoxManager } from './BoxManager';
 import { NavigationController } from './NavigationController';
 import { ConfigManager } from './ConfigManager';
-import { EventBus, Logger, sdkService } from '@renderer/services';
-import { EVENTS, DEFAULT_CONFIG } from '@common/constants';
+import { PluginManager } from '../plugin/PluginManager';
+import { EventBus, Logger, loadWorkspaceBaseCardPlugins, sdkService, translate } from '@renderer/services';
+import { EVENTS, DEFAULT_CONFIG, CACHE_KEYS } from '@common/constants';
 import { useViewerStore } from '@renderer/store/viewer';
+import type { BaseCardRenderPlugin } from './BaseCardPluginRegistry';
 
 /**
  * ViewerApp - 薯片查看器应用主类
@@ -46,10 +48,11 @@ export class ViewerApp implements IViewerApp {
   };
 
   // 子模块
-  private cardManager: ICardManager;
+  private cardManager: CardManager;
   private boxManager: IBoxManager;
   private navigationController: INavigationController;
   private configManager: IConfigManager;
+  private pluginManager: IPluginManager;
 
   // 事件系统
   private eventBus: IEventBus;
@@ -71,6 +74,9 @@ export class ViewerApp implements IViewerApp {
     this.eventBus = new EventBus();
     this.logger = new Logger('ViewerApp');
 
+    // 初始化插件管理器
+    this.pluginManager = new PluginManager(this.eventBus as EventBus);
+
     // 初始化配置管理器
     this.configManager = new ConfigManager({
       defaults: this.options,
@@ -85,7 +91,7 @@ export class ViewerApp implements IViewerApp {
 
     // 初始化卡片和箱子管理器
     this.cardManager = new CardManager(sdkService, this.eventBus as EventBus);
-    this.boxManager = new BoxManager(sdkService, this.eventBus as EventBus);
+    this.boxManager = new BoxManager(sdkService, this.pluginManager, this.eventBus as EventBus);
 
     this.logger.info('ViewerApp instance created');
   }
@@ -132,8 +138,13 @@ export class ViewerApp implements IViewerApp {
       // 3. 设置事件监听
       this.setupEventListeners();
 
-      // 4. 标记就绪
+      // 4. 加载基础卡片渲染插件
+      await this.loadBaseCardPlugins();
+
+      // 5. 标记就绪
       this.setState('ready');
+      this.syncNavigationStore();
+      this.exposeRuntimeApi();
 
       const duration = performance.now() - startTime;
       this.logger.info('ViewerApp initialized successfully', { duration: `${duration.toFixed(2)}ms` });
@@ -174,6 +185,7 @@ export class ViewerApp implements IViewerApp {
 
       // 4. 销毁 SDK
       sdkService.destroy();
+      this.clearRuntimeApi();
 
       this.logger.info('ViewerApp destroyed successfully');
     } catch (error) {
@@ -189,19 +201,15 @@ export class ViewerApp implements IViewerApp {
   async openCard(path: string, options?: Partial<CardRenderOptions & OpenContentOptions>): Promise<void> {
     this.ensureReady();
     this.logger.info('Opening card', { path });
-    console.log('[ViewerApp] openCard called with path:', path);
-    console.log('[ViewerApp] this.container:', this.container);
-    console.log('[ViewerApp] options?.container:', options?.container);
 
     try {
       this.setState('loading');
-      this.store.setLoading(true, '正在加载卡片...');
+      this.store.setLoading(true, translate('content.loading.card'));
 
       // 获取渲染容器
       const container = options?.container ?? this.container;
-      console.log('[ViewerApp] Final container:', container);
       if (!container) {
-        throw new Error('No container provided for rendering');
+        throw new Error(translate('content.error.noContainer'));
       }
 
       // 调用卡片管理器打开卡片
@@ -216,6 +224,13 @@ export class ViewerApp implements IViewerApp {
           renderResult: result,
         };
 
+        // 更新最近文件
+        this.addRecentFile({
+          type: 'card',
+          path,
+          name: this._currentContent.data?.metadata?.name,
+        });
+
         // 添加到导航历史
         if (options?.addToHistory !== false) {
           await this.navigationController.navigate({
@@ -223,13 +238,14 @@ export class ViewerApp implements IViewerApp {
             path,
             options,
           });
+          this.syncNavigationStore();
         }
 
         // 更新 store
         this.store.setCurrentContent(this._currentContent);
         this.emit(EVENTS.CONTENT_OPEN, { type: 'card', path, result });
       } else {
-        throw new Error(result.error ?? 'Failed to open card');
+        throw new Error(result.error ?? translate('content.error.openCardFailed'));
       }
 
       this.setState('ready');
@@ -252,12 +268,12 @@ export class ViewerApp implements IViewerApp {
 
     try {
       this.setState('loading');
-      this.store.setLoading(true, '正在加载箱子...');
+      this.store.setLoading(true, translate('content.loading.box'));
 
       // 获取渲染容器
       const container = options?.container ?? this.container;
       if (!container) {
-        throw new Error('No container provided for rendering');
+        throw new Error(translate('content.error.noContainer'));
       }
 
       // 调用箱子管理器打开箱子
@@ -272,6 +288,13 @@ export class ViewerApp implements IViewerApp {
           renderResult: result,
         };
 
+        // 更新最近文件
+        this.addRecentFile({
+          type: 'box',
+          path,
+          name: this._currentContent.data?.metadata?.name,
+        });
+
         // 添加到导航历史
         if (options?.addToHistory !== false) {
           await this.navigationController.navigate({
@@ -279,13 +302,14 @@ export class ViewerApp implements IViewerApp {
             path,
             options,
           });
+          this.syncNavigationStore();
         }
 
         // 更新 store
         this.store.setCurrentContent(this._currentContent);
         this.emit(EVENTS.CONTENT_OPEN, { type: 'box', path, result });
       } else {
-        throw new Error(result.error ?? 'Failed to open box');
+        throw new Error(result.error ?? translate('content.error.openBoxFailed'));
       }
 
       this.setState('ready');
@@ -357,6 +381,7 @@ export class ViewerApp implements IViewerApp {
     }
 
     this.navigationController.goBack();
+    this.syncNavigationStore();
     const entry = this.navigationController.getCurrentEntry();
     if (entry) {
       this.navigate(entry.target).catch(error => {
@@ -377,6 +402,7 @@ export class ViewerApp implements IViewerApp {
     }
 
     this.navigationController.goForward();
+    this.syncNavigationStore();
     const entry = this.navigationController.getCurrentEntry();
     if (entry) {
       this.navigate(entry.target).catch(error => {
@@ -471,6 +497,18 @@ export class ViewerApp implements IViewerApp {
     return this.cardManager.getZoom();
   }
 
+  registerBaseCardPlugin(plugin: BaseCardRenderPlugin): void {
+    this.cardManager.registerBaseCardPlugin(plugin);
+  }
+
+  unregisterBaseCardPlugin(pluginId: string): void {
+    this.cardManager.unregisterBaseCardPlugin(pluginId);
+  }
+
+  listBaseCardPlugins(): BaseCardRenderPlugin[] {
+    return this.cardManager.listBaseCardPlugins();
+  }
+
   // ==================== 私有方法 ====================
 
   /**
@@ -488,7 +526,7 @@ export class ViewerApp implements IViewerApp {
    */
   private ensureReady(): void {
     if (this._state !== 'ready' && this._state !== 'loading') {
-      throw new Error(`ViewerApp is not ready. Current state: ${this._state}`);
+      throw new Error(`${translate('app.notReady')} (${this._state})`);
     }
   }
 
@@ -507,6 +545,67 @@ export class ViewerApp implements IViewerApp {
     this.eventBus.on(EVENTS.CONTENT_ERROR, (data: { type: string; error: string }) => {
       this.logger.error('Content error', undefined, data);
     });
+  }
+
+  /**
+   * 同步导航状态到 Store
+   */
+  private syncNavigationStore(): void {
+    this.store.$patch({
+      navigationHistory: this.navigationController.getHistory(),
+      currentHistoryIndex: this.navigationController.getCurrentIndex(),
+    });
+  }
+
+  /**
+   * 记录最近文件
+   */
+  private addRecentFile(file: { type: 'card' | 'box'; path: string; name?: string | null }): void {
+    try {
+      const stored = localStorage.getItem(CACHE_KEYS.RECENT_FILES);
+      const recentFiles = stored ? (JSON.parse(stored) as Array<Record<string, unknown>>) : [];
+
+      const filtered = recentFiles.filter(item => item.path !== file.path);
+      const entry = {
+        path: file.path,
+        name: file.name ?? '',
+        type: file.type,
+        timestamp: new Date().toISOString(),
+      };
+
+      const next = [entry, ...filtered].slice(0, 20);
+      localStorage.setItem(CACHE_KEYS.RECENT_FILES, JSON.stringify(next));
+    } catch (error) {
+      this.logger.error('Failed to update recent files', error as Error, { path: file.path });
+    }
+  }
+
+  private async loadBaseCardPlugins(): Promise<void> {
+    const plugins = await loadWorkspaceBaseCardPlugins();
+    for (const plugin of plugins) {
+      this.cardManager.registerBaseCardPlugin(plugin);
+    }
+    this.logger.info('Base card plugins loaded', { count: plugins.length });
+  }
+
+  private exposeRuntimeApi(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    (window as unknown as { chipsViewerRuntime?: unknown }).chipsViewerRuntime = {
+      openCard: (path: string): Promise<void> => this.openCard(path),
+      openBox: (path: string): Promise<void> => this.openBox(path),
+      registerBaseCardPlugin: (plugin: BaseCardRenderPlugin): void => this.registerBaseCardPlugin(plugin),
+      unregisterBaseCardPlugin: (pluginId: string): void => this.unregisterBaseCardPlugin(pluginId),
+      listBaseCardPlugins: (): BaseCardRenderPlugin[] => this.listBaseCardPlugins(),
+    };
+  }
+
+  private clearRuntimeApi(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    delete (window as unknown as { chipsViewerRuntime?: unknown }).chipsViewerRuntime;
   }
 }
 

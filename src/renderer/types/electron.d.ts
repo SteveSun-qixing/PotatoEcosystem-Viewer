@@ -29,10 +29,10 @@ interface WindowAPI {
 interface FileAPI {
   /** 打开文件对话框 */
   openDialog: () => Promise<string | null>;
-  /** 获取最近文件 */
-  getRecentFiles: () => Promise<string[]>;
-  /** 打开文件 */
-  open: (path: string) => Promise<void>;
+  /** 读取文件 */
+  read: (path: string) => Promise<ArrayBuffer>;
+  /** 从拖拽 File 对象提取绝对路径（Electron） */
+  getPathForFile?: (file: File) => string;
 }
 
 /**
@@ -41,6 +41,8 @@ interface FileAPI {
 interface ElectronAPI {
   window: WindowAPI;
   file: FileAPI;
+  readFile?: (path: string) => Promise<ArrayBuffer>;
+  platform?: string;
 }
 
 /**

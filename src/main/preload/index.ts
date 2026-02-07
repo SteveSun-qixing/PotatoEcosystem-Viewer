@@ -3,7 +3,7 @@
  * 在渲染进程中安全暴露 API
  * @module @main/preload
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC_CHANNELS } from '@common/constants';
 
 // 暴露给渲染进程的 API
@@ -22,6 +22,13 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.FILE_OPEN_DIALOG),
     read: (filePath: string): Promise<ArrayBuffer> =>
       ipcRenderer.invoke(IPC_CHANNELS.FILE_READ, filePath),
+    getPathForFile: (file: File): string => {
+      try {
+        return webUtils.getPathForFile(file);
+      } catch {
+        return '';
+      }
+    },
   },
 
   // 便捷方法

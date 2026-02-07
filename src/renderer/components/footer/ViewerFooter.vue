@@ -62,7 +62,7 @@ const contentInfo = computed(() => {
   if (!path) return '';
 
   // 截取显示路径（保留最后几级）
-  const parts = path.split('/');
+  const parts = path.split(/[/\\\\]/);
   if (parts.length > 3) {
     return '...' + '/' + parts.slice(-3).join('/');
   }
@@ -74,7 +74,7 @@ const contentInfo = computed(() => {
  */
 const contentType = computed(() => {
   if (!hasContent.value) return '';
-  return currentContent.value.type === 'card' ? 'Card' : 'Box';
+  return currentContent.value.type === 'card' ? t('fileInfo.card') : t('fileInfo.box');
 });
 </script>
 

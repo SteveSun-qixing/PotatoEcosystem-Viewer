@@ -2,11 +2,14 @@
 /**
  * ContentEmpty - 空状态组件（简洁版）
  */
+import { useTranslation } from '@renderer/composables/useTranslation';
+
+const { t } = useTranslation();
 </script>
 
 <template>
   <div class="content-empty">
-    <p class="content-empty__hint">拖放 .card 文件到此处</p>
+    <p class="content-empty__hint">{{ t('content.empty.description') }}</p>
   </div>
 </template>
 

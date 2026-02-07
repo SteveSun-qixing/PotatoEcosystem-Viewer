@@ -98,6 +98,8 @@ export interface INavigationController {
   getHistory(): NavigationHistoryEntry[];
   clearHistory(): void;
   getCurrentEntry(): NavigationHistoryEntry | null;
+  getHistoryLength(): number;
+  getCurrentIndex(): number;
   goTo(index: number): void;
   saveScrollPosition(position: { x: number; y: number }): void;
   restoreScrollPosition(): { x: number; y: number } | null;

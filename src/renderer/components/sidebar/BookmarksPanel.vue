@@ -12,10 +12,13 @@ import { ref, computed, onMounted } from 'vue';
 import { useViewerStore } from '@renderer/store/viewer';
 import { useViewerApp } from '@renderer/composables/useViewerApp';
 import { useTranslation } from '@renderer/composables/useTranslation';
+import { logger } from '@renderer/services';
+import { generateId } from '@common/types';
 
 const viewerStore = useViewerStore();
 const { navigate } = useViewerApp();
 const { t } = useTranslation();
+const log = logger.createChild('BookmarksPanel');
 
 // 书签类型
 interface Bookmark {
@@ -54,7 +57,7 @@ const loadBookmarks = (): void => {
       bookmarks.value = JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to load bookmarks:', error);
+    log.error('Failed to load bookmarks', error as Error);
     bookmarks.value = [];
   }
 };
@@ -66,7 +69,7 @@ const saveBookmarks = (): void => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks.value));
   } catch (error) {
-    console.error('Failed to save bookmarks:', error);
+    log.error('Failed to save bookmarks', error as Error);
   }
 };
 
@@ -80,8 +83,8 @@ const handleAddBookmark = (): void => {
   const metadata = content.data?.metadata;
 
   const bookmark: Bookmark = {
-    id: `bookmark_${Date.now()}`,
-    name: metadata?.name ?? '未命名',
+    id: generateId(),
+    name: metadata?.name ?? t('viewer.untitled'),
     path: content.path ?? '',
     type: content.type as 'card' | 'box',
     createdAt: new Date().toISOString(),
@@ -112,7 +115,7 @@ const handleOpenBookmark = async (bookmark: Bookmark): Promise<void> => {
       path: bookmark.path,
     });
   } catch (error) {
-    console.error('Failed to open bookmark:', error);
+    log.error('Failed to open bookmark', error as Error, { path: bookmark.path });
   }
 };
 
@@ -137,7 +140,7 @@ onMounted(() => {
           <line v-if="!isBookmarked" x1="12" y1="8" x2="12" y2="14" />
           <line v-if="!isBookmarked" x1="9" y1="11" x2="15" y2="11" />
         </svg>
-        <span>{{ isBookmarked ? '已添加书签' : t('bookmarks.add') }}</span>
+        <span>{{ isBookmarked ? t('bookmarks.added') : t('bookmarks.add') }}</span>
       </button>
     </div>
 

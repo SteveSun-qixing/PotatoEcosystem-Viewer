@@ -12,7 +12,7 @@ import { useTranslation } from '@renderer/composables/useTranslation';
 const { t } = useTranslation();
 
 // Props
-const props = withDefaults(
+withDefaults(
   defineProps<{
     /** 加载提示消息 */
     message?: string;

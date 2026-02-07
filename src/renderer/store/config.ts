@@ -5,6 +5,9 @@
 import { defineStore } from 'pinia';
 import type { ViewerConfig, ThemeType, Platform, RenderMode } from '@common/types';
 import { DEFAULT_CONFIG, CACHE_KEYS } from '@common/constants';
+import { logger, setLocale } from '@renderer/services';
+
+const log = logger.createChild('ConfigStore');
 
 /**
  * 配置 Store 状态接口
@@ -114,8 +117,9 @@ export const useConfigStore = defineStore('config', {
           const config = JSON.parse(stored);
           this.$patch(config);
         }
+        setLocale(this.language);
       } catch (error) {
-        console.error('Failed to load config:', error);
+        log.error('Failed to load config', error as Error);
       }
     },
 
@@ -127,7 +131,7 @@ export const useConfigStore = defineStore('config', {
         const config = this.$state;
         localStorage.setItem(CACHE_KEYS.USER_CONFIG, JSON.stringify(config));
       } catch (error) {
-        console.error('Failed to save config:', error);
+        log.error('Failed to save config', error as Error);
       }
     },
 
@@ -152,6 +156,7 @@ export const useConfigStore = defineStore('config', {
      */
     setLanguage(language: string): void {
       this.language = language;
+      setLocale(language);
       this.saveConfig();
     },
 
@@ -184,6 +189,7 @@ export const useConfigStore = defineStore('config', {
      */
     resetConfig(): void {
       this.$reset();
+      setLocale(this.language);
       this.saveConfig();
     },
   },

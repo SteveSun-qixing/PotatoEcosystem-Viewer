@@ -8,6 +8,7 @@ import { ref, readonly, onMounted, onUnmounted, type Ref } from 'vue';
 import { getViewerApp, type ViewerApp } from '@renderer/core/viewer/ViewerApp';
 import type { ViewerState, CurrentContent, NavigationTarget } from '@common/types';
 import { EVENTS } from '@common/constants';
+import type { BaseCardRenderPlugin } from '@renderer/core/viewer/BaseCardPluginRegistry';
 
 /**
  * ViewerApp 组合式函数返回类型
@@ -43,6 +44,12 @@ export interface UseViewerAppReturn {
   setTheme: (theme: string) => void;
   /** 设置渲染容器 */
   setContainer: (container: HTMLElement) => void;
+  /** 注册基础卡片渲染插件 */
+  registerBaseCardPlugin: (plugin: BaseCardRenderPlugin) => void;
+  /** 注销基础卡片渲染插件 */
+  unregisterBaseCardPlugin: (pluginId: string) => void;
+  /** 列出已注册基础卡片渲染插件 */
+  listBaseCardPlugins: () => BaseCardRenderPlugin[];
 }
 
 // 单例状态，在多个组件间共享
@@ -79,7 +86,7 @@ export function useViewerApp(): UseViewerAppReturn {
   const viewerApp = getViewerApp();
 
   // 事件处理器 ID 列表
-  const handlerIds: string[] = [];
+  const handlerEntries: Array<{ event: string; id: string }> = [];
 
   /**
    * 更新状态
@@ -98,32 +105,32 @@ export function useViewerApp(): UseViewerAppReturn {
   const setupListeners = (): void => {
     // 监听状态变化
     const stateHandlerId = viewerApp.on(EVENTS.STATE_CHANGE, updateState);
-    handlerIds.push(stateHandlerId);
+    handlerEntries.push({ event: EVENTS.STATE_CHANGE, id: stateHandlerId });
 
     // 监听内容打开
     const contentOpenHandlerId = viewerApp.on(EVENTS.CONTENT_OPEN, updateState);
-    handlerIds.push(contentOpenHandlerId);
+    handlerEntries.push({ event: EVENTS.CONTENT_OPEN, id: contentOpenHandlerId });
 
     // 监听内容关闭
     const contentCloseHandlerId = viewerApp.on(EVENTS.CONTENT_CLOSE, updateState);
-    handlerIds.push(contentCloseHandlerId);
+    handlerEntries.push({ event: EVENTS.CONTENT_CLOSE, id: contentCloseHandlerId });
 
     // 监听导航变化
     const navBackHandlerId = viewerApp.on(EVENTS.NAVIGATION_BACK, updateState);
-    handlerIds.push(navBackHandlerId);
+    handlerEntries.push({ event: EVENTS.NAVIGATION_BACK, id: navBackHandlerId });
 
     const navForwardHandlerId = viewerApp.on(EVENTS.NAVIGATION_FORWARD, updateState);
-    handlerIds.push(navForwardHandlerId);
+    handlerEntries.push({ event: EVENTS.NAVIGATION_FORWARD, id: navForwardHandlerId });
   };
 
   /**
    * 清理事件监听
    */
   const cleanupListeners = (): void => {
-    for (const handlerId of handlerIds) {
-      viewerApp.off(EVENTS.STATE_CHANGE, handlerId);
+    for (const entry of handlerEntries) {
+      viewerApp.off(entry.event, entry.id);
     }
-    handlerIds.length = 0;
+    handlerEntries.length = 0;
   };
 
   // 生命周期
@@ -173,6 +180,18 @@ export function useViewerApp(): UseViewerAppReturn {
     viewerApp.setContainer(container);
   };
 
+  const registerBaseCardPlugin = (plugin: BaseCardRenderPlugin): void => {
+    viewerApp.registerBaseCardPlugin(plugin);
+  };
+
+  const unregisterBaseCardPlugin = (pluginId: string): void => {
+    viewerApp.unregisterBaseCardPlugin(pluginId);
+  };
+
+  const listBaseCardPlugins = (): BaseCardRenderPlugin[] => {
+    return viewerApp.listBaseCardPlugins();
+  };
+
   return {
     viewerApp,
     state: readonly(state),
@@ -189,5 +208,8 @@ export function useViewerApp(): UseViewerAppReturn {
     setZoom,
     setTheme,
     setContainer,
+    registerBaseCardPlugin,
+    unregisterBaseCardPlugin,
+    listBaseCardPlugins,
   };
 }

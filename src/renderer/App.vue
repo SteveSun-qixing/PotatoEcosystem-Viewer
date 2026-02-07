@@ -6,15 +6,17 @@
 import { onMounted, onUnmounted, ref, provide } from 'vue';
 import MainLayout from './components/layout/MainLayout.vue';
 import { useViewerApp } from './composables';
+import { useTranslation } from './composables/useTranslation';
 import { logger, eventBus } from './services';
 import { EVENTS } from '@common/constants';
 
 const log = logger.createChild('App');
 const isInitializing = ref(true);
 const initError = ref<string | null>(null);
+const { t } = useTranslation();
 
 // 获取 ViewerApp 实例
-const { viewerApp, state, isReady, error } = useViewerApp();
+const { viewerApp, state, isReady } = useViewerApp();
 
 // 提供给子组件
 provide('viewerApp', viewerApp);
@@ -61,15 +63,15 @@ function handleReload(): void {
     <!-- 初始化中 -->
     <div v-if="isInitializing" class="chips-viewer-app__initializing">
       <div class="chips-viewer-app__spinner" />
-      <p class="chips-viewer-app__text">正在初始化...</p>
+      <p class="chips-viewer-app__text">{{ t('app.initializing') }}</p>
     </div>
 
     <!-- 初始化错误 -->
     <div v-else-if="initError" class="chips-viewer-app__error">
       <div class="chips-viewer-app__error-icon">❌</div>
-      <h2>初始化失败</h2>
+      <h2>{{ t('app.initFailed') }}</h2>
       <p>{{ initError }}</p>
-      <button @click="handleReload">重新加载</button>
+      <button @click="handleReload">{{ t('app.reload') }}</button>
     </div>
 
     <!-- 主布局 -->

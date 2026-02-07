@@ -12,6 +12,7 @@ import type {
   PluginContext,
   CommandHandler,
   RendererDefinition,
+  LayoutRendererDefinition,
 } from '@common/types/plugin';
 import type { IPluginManager, IEventBus, ILogger } from '@common/interfaces';
 import { Logger } from '@renderer/services/Logger';
@@ -91,6 +92,13 @@ export class PluginManager implements IPluginManager {
   private readonly renderers: Map<string, RendererDefinition> = new Map();
 
   /**
+   * 全局布局渲染器注册表
+   * key: 完整布局类型（pluginId:layoutType）
+   * value: 布局渲染器定义
+   */
+  private readonly layoutRenderers: Map<string, LayoutRendererDefinition> = new Map();
+
+  /**
    * 日志器
    */
   private readonly logger: ILogger;
@@ -133,7 +141,8 @@ export class PluginManager implements IPluginManager {
 
     // 检查是否已注册
     if (this.plugins.has(id)) {
-      throw new Error(`Plugin "${id}" is already registered`);
+      this.logger.warn('Plugin already registered', { id });
+      return;
     }
 
     // 创建插件实例
@@ -175,8 +184,10 @@ export class PluginManager implements IPluginManager {
       return;
     }
 
+    const wasEnabled = pluginData.instance.state === 'enabled';
+
     // 如果插件已启用，先禁用
-    if (pluginData.instance.state === 'enabled') {
+    if (wasEnabled) {
       await this.disable(id);
     }
 
@@ -186,7 +197,9 @@ export class PluginManager implements IPluginManager {
     this.logger.info('Plugin unregistered', { id });
 
     // 发布插件卸载事件
-    this.eventBus.emit(EVENTS.PLUGIN_UNLOAD, { pluginId: id });
+    if (!wasEnabled) {
+      this.eventBus.emit(EVENTS.PLUGIN_UNLOAD, { pluginId: id });
+    }
 
     // 持久化状态
     this.persistPluginState();
@@ -251,6 +264,9 @@ export class PluginManager implements IPluginManager {
     }
 
     await this.deactivatePlugin(id);
+
+    // 发布插件卸载事件
+    this.eventBus.emit(EVENTS.PLUGIN_UNLOAD, { pluginId: id });
 
     // 持久化状态
     this.persistPluginState();
@@ -397,6 +413,34 @@ export class PluginManager implements IPluginManager {
   }
 
   /**
+   * 获取支持指定布局类型的布局渲染器
+   *
+   * @param layoutType - 布局类型
+   * @returns 布局渲染器定义，未找到返回 undefined
+   */
+  getLayoutRenderer(layoutType: string): LayoutRendererDefinition | undefined {
+    for (const layoutRenderer of this.layoutRenderers.values()) {
+      if (layoutRenderer.layoutType === layoutType) {
+        return layoutRenderer;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 获取所有已注册的布局类型
+   *
+   * @returns 布局类型数组
+   */
+  getLayoutTypes(): string[] {
+    const types = new Set<string>();
+    for (const layoutRenderer of this.layoutRenderers.values()) {
+      types.add(layoutRenderer.layoutType);
+    }
+    return Array.from(types);
+  }
+
+  /**
    * 获取文件对应的插件
    *
    * @description
@@ -471,6 +515,15 @@ export class PluginManager implements IPluginManager {
   }
 
   /**
+   * 获取所有已注册的布局渲染器键
+   *
+   * @returns 布局渲染器键数组
+   */
+  getLayoutRendererKeys(): string[] {
+    return Array.from(this.layoutRenderers.keys());
+  }
+
+  /**
    * 创建插件上下文
    *
    * @param pluginId - 插件 ID
@@ -487,6 +540,7 @@ export class PluginManager implements IPluginManager {
       this.eventBus,
       this.commands,
       this.renderers,
+      this.layoutRenderers,
       pluginData.instance.config
     );
   }
@@ -674,7 +728,12 @@ export class PluginManager implements IPluginManager {
         }
       }
 
-      localStorage.setItem(CACHE_KEYS.PLUGIN_STATE, JSON.stringify(state));
+      const payload = {
+        ...state,
+        enabled: [...state.enabledPlugins],
+      };
+
+      localStorage.setItem(CACHE_KEYS.PLUGIN_STATE, JSON.stringify(payload));
 
       this.logger.debug('Plugin state persisted', {
         enabledCount: state.enabledPlugins.length,
@@ -694,11 +753,14 @@ export class PluginManager implements IPluginManager {
         return;
       }
 
-      const state: PersistedPluginState = JSON.parse(saved);
+      const state = JSON.parse(saved) as PersistedPluginState & {
+        enabled?: string[];
+        configs?: Record<string, Record<string, unknown>>;
+      };
 
       // 存储加载的配置，供后续插件注册时使用
-      this.loadedPluginConfigs = state.pluginConfigs;
-      this.loadedEnabledPlugins = state.enabledPlugins;
+      this.loadedPluginConfigs = state.pluginConfigs ?? state.configs ?? {};
+      this.loadedEnabledPlugins = state.enabledPlugins ?? state.enabled ?? [];
 
       this.logger.debug('Plugin state loaded', {
         enabledCount: state.enabledPlugins.length,

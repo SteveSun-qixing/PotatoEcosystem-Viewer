@@ -1,21 +1,22 @@
 /**
  * CardManager 单元测试
  */
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { CardManager } from '@renderer/core/viewer/CardManager';
+import type { BaseCardRenderPlugin } from '@renderer/core/viewer/BaseCardPluginRegistry';
 import { EventBus } from '@renderer/services';
 import type { SDKService } from '@renderer/services';
 
-// Mock SDKService
-const createMockSDKService = (): SDKService => ({
-  loadCard: vi.fn(),
-  getCardMetadata: vi.fn(),
-  validateCard: vi.fn(),
-  renderCard: vi.fn(),
-  isReady: vi.fn().mockReturnValue(true),
-} as unknown as SDKService);
+const createMockSDKService = (): SDKService =>
+  ({
+    loadCard: vi.fn(),
+    getCardMetadata: vi.fn(),
+    validateCard: vi.fn(),
+    renderCard: vi.fn(),
+    request: vi.fn(),
+    isReady: vi.fn().mockReturnValue(true),
+  }) as unknown as SDKService;
 
-// Mock Card 数据
 const mockCard = {
   id: 'card-test-001',
   metadata: {
@@ -28,13 +29,30 @@ const mockCard = {
     author: '测试作者',
   },
   structure: {
-    structure: [],
+    structure: [
+      {
+        id: 'base-rich-001',
+        type: 'RichTextCard',
+      },
+    ],
     manifest: {
-      card_count: 0,
+      card_count: 1,
       resource_count: 0,
       resources: [],
     },
   },
+  baseCards: [
+    {
+      id: 'base-rich-001',
+      type: 'RichTextCard',
+      config: {
+        card_type: 'RichTextCard',
+        content_source: 'inline',
+        content_text: '<p>hello</p>',
+      },
+      content: '<p>hello</p>',
+    },
+  ],
 };
 
 describe('CardManager', () => {
@@ -48,12 +66,10 @@ describe('CardManager', () => {
     eventBus = new EventBus();
     cardManager = new CardManager(mockSDKService, eventBus);
 
-    // 创建测试容器
     container = document.createElement('div');
     container.id = 'test-container';
     document.body.appendChild(container);
 
-    // 重置 mocks
     vi.clearAllMocks();
   });
 
@@ -63,72 +79,89 @@ describe('CardManager', () => {
 
   describe('openCard', () => {
     it('should open a card successfully', async () => {
-      // Setup
       (mockSDKService.loadCard as Mock).mockResolvedValue(mockCard);
       (mockSDKService.renderCard as Mock).mockResolvedValue({
         success: true,
         frame: document.createElement('iframe'),
       });
 
-      // Act
       const result = await cardManager.openCard('/test/card.card', container);
 
-      // Assert
       expect(result.success).toBe(true);
       expect(mockSDKService.loadCard).toHaveBeenCalledWith('/test/card.card');
       expect(cardManager.getCurrentCard()).toEqual(mockCard);
     });
 
     it('should handle load error gracefully', async () => {
-      // Setup
       (mockSDKService.loadCard as Mock).mockRejectedValue(new Error('Load failed'));
 
-      // Act
       const result = await cardManager.openCard('/test/card.card', container);
 
-      // Assert
       expect(result.success).toBe(false);
       expect(result.error).toBe('Load failed');
       expect(cardManager.getCurrentCard()).toBeNull();
     });
 
-    it('should fallback to local rendering when SDK rendering fails', async () => {
-      // Setup
+    it('should fallback to plugin rendering when foundation rendering fails', async () => {
       (mockSDKService.loadCard as Mock).mockResolvedValue(mockCard);
       (mockSDKService.renderCard as Mock).mockRejectedValue(new Error('Render failed'));
 
-      // Act
+      const cleanup = vi.fn();
+      const plugin: BaseCardRenderPlugin = {
+        id: 'test:richtext',
+        cardType: 'RichTextCard',
+        render: async ({ container: target }) => {
+          target.innerHTML = '<div data-testid="plugin-render">plugin rendered</div>';
+          return { cleanup };
+        },
+      };
+      cardManager.registerBaseCardPlugin(plugin);
+
       const result = await cardManager.openCard('/test/card.card', container);
 
-      // Assert
       expect(result.success).toBe(true);
-      expect(container.querySelector('iframe')).not.toBeNull();
+      expect(container.querySelector('[data-testid="plugin-render"]')).not.toBeNull();
+      cardManager.closeCard();
+      expect(cleanup).toHaveBeenCalledTimes(1);
     });
 
-    it('should cleanup previous card when opening a new one', async () => {
-      // Setup
+    it('should render a visible error block when required base card plugin is missing', async () => {
       (mockSDKService.loadCard as Mock).mockResolvedValue(mockCard);
-      (mockSDKService.renderCard as Mock).mockResolvedValue({
-        success: true,
-        frame: document.createElement('iframe'),
+      (mockSDKService.renderCard as Mock).mockRejectedValue(new Error('Render failed'));
+
+      const result = await cardManager.openCard('/test/card.card', container);
+      const errorBlock = container.querySelector('.chips-viewer-base-card-empty');
+
+      expect(result.success).toBe(true);
+      expect(errorBlock?.textContent).toContain('Plugin missing for RichTextCard');
+    });
+
+    it('should cleanup previous plugin render when opening a new card', async () => {
+      (mockSDKService.loadCard as Mock).mockResolvedValue(mockCard);
+      (mockSDKService.renderCard as Mock).mockRejectedValue(new Error('Render failed'));
+
+      const cleanup = vi.fn();
+      cardManager.registerBaseCardPlugin({
+        id: 'test:richtext',
+        cardType: 'RichTextCard',
+        render: async ({ container: target }) => {
+          target.innerHTML = '<div class="plugin-card">ok</div>';
+          return { cleanup };
+        },
       });
 
-      // Act - 打开第一个卡片
       await cardManager.openCard('/test/card1.card', container);
-      const firstFrame = container.querySelector('iframe');
-
-      // 打开第二个卡片
       await cardManager.openCard('/test/card2.card', container);
 
-      // Assert
-      expect(container.querySelectorAll('iframe').length).toBe(1);
-      expect(container.querySelector('iframe')).not.toBe(firstFrame);
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(container.querySelectorAll('.plugin-card').length).toBe(1);
+      cardManager.closeCard();
+      expect(cleanup).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('closeCard', () => {
     it('should close the current card', async () => {
-      // Setup
       (mockSDKService.loadCard as Mock).mockResolvedValue(mockCard);
       (mockSDKService.renderCard as Mock).mockResolvedValue({
         success: true,
@@ -137,10 +170,8 @@ describe('CardManager', () => {
 
       await cardManager.openCard('/test/card.card', container);
 
-      // Act
       cardManager.closeCard();
 
-      // Assert
       expect(cardManager.getCurrentCard()).toBeNull();
       expect(container.querySelector('iframe')).toBeNull();
     });
@@ -148,13 +179,10 @@ describe('CardManager', () => {
 
   describe('getCardMetadata', () => {
     it('should return card metadata', async () => {
-      // Setup
       (mockSDKService.getCardMetadata as Mock).mockResolvedValue(mockCard.metadata);
 
-      // Act
       const metadata = await cardManager.getCardMetadata('/test/card.card');
 
-      // Assert
       expect(metadata).toEqual(mockCard.metadata);
       expect(mockSDKService.getCardMetadata).toHaveBeenCalledWith('/test/card.card');
     });
@@ -162,13 +190,10 @@ describe('CardManager', () => {
 
   describe('validateCard', () => {
     it('should validate a card file', async () => {
-      // Setup
       (mockSDKService.validateCard as Mock).mockResolvedValue(true);
 
-      // Act
       const isValid = await cardManager.validateCard('/test/card.card');
 
-      // Assert
       expect(isValid).toBe(true);
       expect(mockSDKService.validateCard).toHaveBeenCalledWith('/test/card.card');
     });
@@ -176,15 +201,11 @@ describe('CardManager', () => {
 
   describe('zoom', () => {
     it('should set and get zoom level', () => {
-      // Act
       cardManager.setZoom(1.5);
-
-      // Assert
       expect(cardManager.getZoom()).toBe(1.5);
     });
 
     it('should clamp zoom to valid range', () => {
-      // Act & Assert
       cardManager.setZoom(0.05);
       expect(cardManager.getZoom()).toBe(0.1);
 

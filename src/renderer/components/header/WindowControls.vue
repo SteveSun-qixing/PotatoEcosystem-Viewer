@@ -9,7 +9,7 @@
  * - 关闭窗口
  * 仅在 Electron 环境下使用
  */
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useTranslation } from '@renderer/composables/useTranslation';
 
 const { t } = useTranslation();

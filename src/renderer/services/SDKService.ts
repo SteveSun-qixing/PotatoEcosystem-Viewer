@@ -8,13 +8,32 @@ import type { ISDKService, SDKServiceOptions } from '@common/interfaces';
 import { Logger } from './Logger';
 import { EventBus } from './EventBus';
 import { EVENTS } from '@common/constants';
+import { translate } from './i18n';
 
 // 基础卡片配置
 export interface BaseCardConfig {
   id: string;
   type: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   content: string;
+}
+
+interface CardStructureEntry {
+  id: string;
+  type: string;
+}
+
+interface CardStructureManifest {
+  card_count?: number;
+  resource_count?: number;
+  resources?: unknown[];
+}
+
+interface ElectronAPI {
+  file?: {
+    read?: (path: string) => Promise<ArrayBuffer>;
+  };
+  readFile?: (path: string) => Promise<ArrayBuffer>;
 }
 
 // SDK 类型定义（实际类型来自 @chips/sdk）
@@ -50,6 +69,7 @@ interface ChipsSDKInstance {
 export class SDKService implements ISDKService {
   private sdk: ChipsSDKInstance | null = null;
   private initialized = false;
+  private standaloneMode = false;
   private readonly logger: Logger;
   private readonly eventBus: EventBus;
   private initPromise: Promise<void> | null = null;
@@ -90,17 +110,32 @@ export class SDKService implements ISDKService {
           this.sdk = new ChipsSDK({
             autoConnect: options.autoConnect ?? true,
             debug: options.debug ?? false,
+            connector: {
+              reconnect: false,
+              maxReconnectAttempts: 0,
+            },
           }) as unknown as ChipsSDKInstance;
 
           await this.sdk.initialize();
+          this.standaloneMode = false;
           this.logger.info('SDK initialized successfully');
         } else {
           throw new Error('ChipsSDK not found in module');
         }
       } catch (sdkError) {
+        if (this.sdk) {
+          try {
+            this.sdk.destroy();
+          } catch (destroyError) {
+            this.logger.warn('Failed to destroy SDK after initialization error', {
+              error: (destroyError as Error).message,
+            });
+          }
+        }
         // SDK 不可用，使用降级模式
         this.logger.warn('SDK not available, running in standalone mode', sdkError as Error);
         this.sdk = this.createStandaloneSDK();
+        this.standaloneMode = true;
       }
 
       this.initialized = true;
@@ -160,23 +195,21 @@ export class SDKService implements ISDKService {
     this.logger.info('Loading local card', { path });
 
     // 使用 Electron IPC 读取文件
-    if (typeof window !== 'undefined' && (window as any).electronAPI?.file?.read) {
+    const electronAPI = this.getElectronAPI();
+    if (electronAPI?.file?.read) {
       try {
-        const buffer = await (window as any).electronAPI.file.read(path);
+        const buffer = await electronAPI.file.read(path);
         this.logger.debug('File read successfully', { size: buffer.byteLength });
 
         // 解析 .card 文件（ZIP 格式）
-        const card = await this.parseCardFile(buffer, path);
-        return card;
+        return this.parseCardFile(buffer, path);
       } catch (error) {
         this.logger.error('Failed to read local card file', error as Error);
+        throw error;
       }
-    } else {
-      this.logger.warn('electronAPI.file.read not available');
     }
-
-    // 返回占位卡片数据
-    return this.createPlaceholderCard(path);
+    this.logger.warn('electronAPI.file.read not available');
+    throw new Error('Electron file read API is unavailable');
   }
 
   /**
@@ -191,16 +224,11 @@ export class SDKService implements ISDKService {
       const fileList = Object.keys(zip.files);
       this.logger.debug('ZIP loaded, files:', fileList);
 
-      // 读取 .card/metadata.yaml
-      let metadataFile = zip.file('.card/metadata.yaml') || zip.file('.card/metadata.yml');
-      // 兼容旧格式
-      if (!metadataFile) {
-        metadataFile = zip.file('metadata.yaml') || zip.file('metadata.yml');
-      }
+      // 读取 .card/metadata.yaml（标准路径）
+      const metadataFile = zip.file('.card/metadata.yaml');
       
       if (!metadataFile) {
-        this.logger.warn('No metadata.yaml found in card file');
-        return this.createPlaceholderCard(path);
+        throw new Error(`Invalid card file: missing .card/metadata.yaml (${path})`);
       }
 
       const metadataContent = await metadataFile.async('string');
@@ -208,34 +236,56 @@ export class SDKService implements ISDKService {
 
       // 使用 js-yaml 解析
       const yaml = (await import('js-yaml')).default;
-      const metadata = yaml.load(metadataContent) as Record<string, any>;
+      const metadata = this.asRecord(yaml.load(metadataContent));
 
-      // 读取 .card/structure.yaml
-      let structureFile = zip.file('.card/structure.yaml') || zip.file('.card/structure.yml');
-      // 兼容旧格式
-      if (!structureFile) {
-        structureFile = zip.file('structure.yaml') || zip.file('structure.yml');
-      }
+      // 读取 .card/structure.yaml（标准路径）
+      const structureFile = zip.file('.card/structure.yaml');
 
-      let structure: { structure: any[]; manifest: any } = { 
-        structure: [], 
-        manifest: { card_count: 0, resource_count: 0, resources: [] } 
+      let structure: { structure: CardStructureEntry[]; manifest: CardStructureManifest } = {
+        structure: [],
+        manifest: { card_count: 0, resource_count: 0, resources: [] },
       };
       
       if (structureFile) {
         const structureContent = await structureFile.async('string');
         this.logger.debug('Structure content:', structureContent.substring(0, 500));
-        const parsedStructure = yaml.load(structureContent) as Record<string, any>;
+        const parsedStructure = this.asRecord(yaml.load(structureContent));
         this.logger.debug('Parsed structure:', parsedStructure);
+        const parsedEntries = this.parseStructureEntries(this.getArrayField(parsedStructure, 'structure'));
+        const parsedManifest = this.asRecord(parsedStructure.manifest);
         structure = {
-          structure: parsedStructure?.structure || [],
+          structure: parsedEntries,
           manifest: {
-            card_count: parsedStructure?.manifest?.card_count || 0,
-            resource_count: parsedStructure?.manifest?.resource_count || 0,
-            resources: parsedStructure?.manifest?.resources || [],
+            card_count: this.getNumberField(parsedManifest, 'card_count') ?? 0,
+            resource_count: this.getNumberField(parsedManifest, 'resource_count') ?? 0,
+            resources: this.getArrayField(parsedManifest, 'resources') ?? [],
           },
         };
         this.logger.debug('Structure array:', structure.structure);
+      }
+
+      const resourceFiles = new Map<string, ArrayBuffer>();
+      for (const filePath of fileList) {
+        if (filePath.endsWith('/')) {
+          continue;
+        }
+        if (filePath === '.card/metadata.yaml' || filePath === '.card/structure.yaml') {
+          continue;
+        }
+        if (filePath.startsWith('content/') && filePath.endsWith('.yaml')) {
+          continue;
+        }
+
+        const entry = zip.file(filePath);
+        if (!entry) {
+          continue;
+        }
+        const content = await entry.async('arraybuffer');
+        resourceFiles.set(filePath, content);
+        const normalized = this.normalizeResourcePath(filePath);
+        if (normalized !== filePath) {
+          resourceFiles.set(normalized, content);
+        }
       }
 
       // 读取 content/ 目录下的基础卡片配置
@@ -247,49 +297,55 @@ export class SDKService implements ISDKService {
         const configFile = zip.file(configPath);
         this.logger.debug(`Looking for base card config: ${configPath}`);
         
-        if (configFile) {
-          const configContent = await configFile.async('string');
-          this.logger.debug(`Base card config (${item.id}):`, configContent.substring(0, 500));
-          const config = yaml.load(configContent) as Record<string, any>;
-          this.logger.debug(`Parsed config:`, config);
-          
-          // 如果是文件引用，读取文件内容
-          let content = config?.content_text || '';
-          if (config?.content_source === 'file' && config?.content_file) {
-            const contentFile = zip.file(config.content_file);
-            if (contentFile) {
-              content = await contentFile.async('string');
-            }
-          }
-          
-          baseCards.push({
-            id: item.id,
-            type: item.type || config?.card_type,
-            config: config || {},
-            content,
-          });
-          this.logger.info(`Base card loaded: ${item.id}, type: ${item.type}, content length: ${content.length}`);
-        } else {
-          this.logger.warn(`Base card config not found: ${configPath}`);
+        if (!configFile) {
+          throw new Error(`Base card config not found: ${configPath}`);
         }
+
+        const configContent = await configFile.async('string');
+        this.logger.debug(`Base card config (${item.id}):`, configContent.substring(0, 500));
+        const configDocument = this.asRecord(yaml.load(configContent));
+        this.logger.debug(`Parsed config document:`, configDocument);
+        const parsedConfig = this.parseBaseCardDocument(configDocument, item.type);
+        const baseCardType = parsedConfig.type;
+        const baseCardData = parsedConfig.data;
+        
+        // 如果是文件引用，读取文件内容
+        let content = this.getStringField(baseCardData, 'content_text') ?? '';
+        const contentSource = this.getStringField(baseCardData, 'content_source');
+        const contentFilePath = this.getStringField(baseCardData, 'content_file');
+        if (contentSource === 'file' && contentFilePath) {
+          const contentFile = zip.file(contentFilePath) ?? zip.file(this.normalizeResourcePath(contentFilePath));
+          if (contentFile) {
+            content = await contentFile.async('string');
+          }
+        }
+        
+        baseCards.push({
+          id: item.id,
+          type: baseCardType,
+          config: baseCardData,
+          content,
+        });
+        this.logger.info(`Base card loaded: ${item.id}, type: ${baseCardType}, content length: ${content.length}`);
       }
 
       // 扩展 Card 类型以包含基础卡片数据
       const card: Card & { baseCards?: BaseCardConfig[] } = {
-        id: metadata.card_id || `card-${Date.now()}`,
+        id: this.getStringField(metadata, 'card_id') || `card-${Date.now()}`,
         metadata: {
-          chip_standards_version: metadata.chip_standards_version || '1.0.0',
-          card_id: metadata.card_id || `card-${Date.now()}`,
-          name: metadata.name || path.split('/').pop()?.replace('.card', '') || 'Unknown',
-          description: metadata.description || '',
-          author: metadata.author || 'Unknown',
-          created_at: metadata.created_at || new Date().toISOString(),
-          modified_at: metadata.modified_at || new Date().toISOString(),
-          tags: metadata.tags || [],
-          theme: metadata.theme,
+          chip_standards_version: this.getStringField(metadata, 'chip_standards_version') || '1.0.0',
+          card_id: this.getStringField(metadata, 'card_id') || `card-${Date.now()}`,
+          name: this.getStringField(metadata, 'name') || path.split('/').pop()?.replace('.card', '') || 'Unknown',
+          description: this.getStringField(metadata, 'description') ?? '',
+          author: this.getStringField(metadata, 'author') || 'Unknown',
+          created_at: this.getStringField(metadata, 'created_at') || new Date().toISOString(),
+          modified_at: this.getStringField(metadata, 'modified_at') || new Date().toISOString(),
+          tags: this.getStringArrayField(metadata, 'tags'),
+          theme: this.getStringField(metadata, 'theme'),
         },
         structure: structure as Card['structure'],
         baseCards,
+        resources: resourceFiles,
       };
 
       this.logger.info('Card parsed successfully', { 
@@ -300,19 +356,18 @@ export class SDKService implements ISDKService {
       return card;
     } catch (error) {
       this.logger.error('Failed to parse card file', error as Error);
-      return this.createPlaceholderCard(path);
+      throw error;
     }
   }
 
   /**
    * 简单的 YAML 解析器（支持基本格式）
    */
-  private parseSimpleYaml(content: string): Record<string, any> {
-    const result: Record<string, any> = {};
+  private parseSimpleYaml(content: string): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
     const lines = content.split('\n');
     let currentKey = '';
-    let currentIndent = 0;
-    const stack: { obj: Record<string, any>; indent: number }[] = [{ obj: result, indent: -1 }];
+    const stack: { obj: Record<string, unknown>; indent: number }[] = [{ obj: result, indent: -1 }];
 
     for (const line of lines) {
       // 跳过空行和注释
@@ -329,7 +384,7 @@ export class SDKService implements ISDKService {
         if (Array.isArray(parent[currentKey])) {
           // 简单值
           if (!value.includes(':')) {
-            parent[currentKey].push(value.replace(/^["']|["']$/g, ''));
+            (parent[currentKey] as string[]).push(value.replace(/^["']|["']$/g, ''));
           }
         }
         continue;
@@ -351,7 +406,7 @@ export class SDKService implements ISDKService {
         if (value === '' || value === '|' || value === '>') {
           // 嵌套对象或多行字符串
           currentObj[key] = {};
-          stack.push({ obj: currentObj[key], indent });
+          stack.push({ obj: currentObj[key] as Record<string, unknown>, indent });
           currentKey = key;
         } else if (value.startsWith('[') && value.endsWith(']')) {
           // 内联数组
@@ -386,9 +441,10 @@ export class SDKService implements ISDKService {
    */
   private async loadLocalBox(path: string): Promise<Box> {
     // 使用 Electron IPC 读取文件
-    if (typeof window !== 'undefined' && (window as any).electronAPI?.readFile) {
+    const electronAPI = this.getElectronAPI();
+    if (electronAPI?.readFile) {
       try {
-        const content = await (window as any).electronAPI.readFile(path);
+        const content = await electronAPI.readFile(path);
         return this.parseBoxContent(content, path);
       } catch (error) {
         this.logger.error('Failed to read local box file', error as Error);
@@ -415,6 +471,91 @@ export class SDKService implements ISDKService {
     return this.createPlaceholderBox(path);
   }
 
+  private getElectronAPI(): ElectronAPI | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const api = (window as { electronAPI?: unknown }).electronAPI;
+    if (!api || typeof api !== 'object') {
+      return null;
+    }
+    return api as ElectronAPI;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private getStringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private getNumberField(record: Record<string, unknown>, key: string): number | undefined {
+    const value = record[key];
+    return typeof value === 'number' ? value : undefined;
+  }
+
+  private getArrayField(record: Record<string, unknown>, key: string): unknown[] | undefined {
+    const value = record[key];
+    return Array.isArray(value) ? value : undefined;
+  }
+
+  private getStringArrayField(record: Record<string, unknown>, key: string): string[] {
+    const value = this.getArrayField(record, key);
+    if (!value) {
+      return [];
+    }
+    return value.filter((item): item is string => typeof item === 'string');
+  }
+
+  private parseStructureEntries(value?: unknown[]): CardStructureEntry[] {
+    if (!value) {
+      return [];
+    }
+    return value
+      .map(item => this.asRecord(item))
+      .filter(item => typeof item.id === 'string' && typeof item.type === 'string')
+      .map(item => ({
+        id: item.id as string,
+        type: item.type as string,
+      }));
+  }
+
+  private parseBaseCardDocument(
+    document: Record<string, unknown>,
+    structureType: string
+  ): { type: string; data: Record<string, unknown> } {
+    const documentType = this.getStringField(document, 'type')?.trim();
+    if (!documentType) {
+      throw new Error('Base card config must include type');
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(document, 'data')) {
+      throw new Error('Base card config must include data');
+    }
+
+    if (!document.data || typeof document.data !== 'object' || Array.isArray(document.data)) {
+      throw new Error('Base card config data must be an object');
+    }
+    const data = document.data as Record<string, unknown>;
+
+    if (structureType && documentType !== structureType) {
+      throw new Error(
+        `Base card type mismatch: structure expects ${structureType}, content is ${documentType}`
+      );
+    }
+
+    return { type: documentType, data };
+  }
+
+  private normalizeResourcePath(path: string): string {
+    return path.replace(/^\.?\//, '');
+  }
+
   /**
    * 创建占位卡片
    */
@@ -427,7 +568,7 @@ export class SDKService implements ISDKService {
         chip_standards_version: '1.0.0',
         card_id: `card-${Date.now()}`,
         name: filename.replace('.card', ''),
-        description: `卡片文件: ${filename}`,
+        description: translate('content.placeholder.card', { name: filename }),
         author: 'Local',
         created_at: now,
         modified_at: now,
@@ -456,7 +597,7 @@ export class SDKService implements ISDKService {
         chip_standards_version: '1.0.0',
         box_id: `box-${Date.now()}`,
         name: filename.replace('.box', ''),
-        description: `箱子文件: ${filename}`,
+        description: translate('content.placeholder.box', { name: filename }),
         created_at: now,
         modified_at: now,
         layout: 'grid',
@@ -486,6 +627,7 @@ export class SDKService implements ISDKService {
       this.sdk.destroy();
       this.sdk = null;
       this.initialized = false;
+      this.standaloneMode = false;
       this.initPromise = null;
       this.logger.info('SDK destroyed');
     }
@@ -664,6 +806,10 @@ export class SDKService implements ISDKService {
     // 检查是否在降级模式
     if (!this.sdk || !this.initialized) {
       throw new Error('SDK not available - use local rendering');
+    }
+
+    if (this.standaloneMode) {
+      throw new Error('Foundation rendering not available in standalone mode');
     }
 
     try {

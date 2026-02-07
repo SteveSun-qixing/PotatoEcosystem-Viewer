@@ -207,14 +207,16 @@ export class PluginSandbox {
     const permissions = manifest.permissions ?? [];
 
     // 基础上下文（始终可用）
+    const pluginLogger = this.logger.createChild(`Plugin:${manifest.id}`);
+
     const context: Record<string, unknown> = {
       // 安全的控制台
       console: {
-        log: (...args: unknown[]) => console.log(`[Plugin:${manifest.id}]`, ...args),
-        info: (...args: unknown[]) => console.info(`[Plugin:${manifest.id}]`, ...args),
-        warn: (...args: unknown[]) => console.warn(`[Plugin:${manifest.id}]`, ...args),
-        error: (...args: unknown[]) => console.error(`[Plugin:${manifest.id}]`, ...args),
-        debug: (...args: unknown[]) => console.debug(`[Plugin:${manifest.id}]`, ...args),
+        log: (...args: unknown[]) => pluginLogger.info('Plugin log', { args }),
+        info: (...args: unknown[]) => pluginLogger.info('Plugin info', { args }),
+        warn: (...args: unknown[]) => pluginLogger.warn('Plugin warn', { args }),
+        error: (...args: unknown[]) => pluginLogger.error('Plugin error', undefined, { args }),
+        debug: (...args: unknown[]) => pluginLogger.debug('Plugin debug', { args }),
       },
 
       // 安全的定时器

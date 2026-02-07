@@ -71,6 +71,32 @@ export interface RendererDefinition {
   dispose?: () => void;
 }
 
+// 布局渲染器定义
+export interface LayoutRendererDefinition {
+  layoutType: string;
+  render: (context: LayoutRenderContext) => Promise<LayoutRenderResult>;
+  update?: (context: LayoutRenderContext) => Promise<void>;
+  dispose?: () => void;
+  getConfigSchema?: () => Record<string, unknown>;
+}
+
+// 布局渲染上下文
+export interface LayoutRenderContext {
+  box: unknown; // Box 类型
+  container: HTMLElement;
+  theme: string;
+  config: Record<string, unknown>;
+  cards: unknown[]; // 卡片列表
+}
+
+// 布局渲染结果
+export interface LayoutRenderResult {
+  success: boolean;
+  html?: string;
+  css?: string;
+  error?: string;
+}
+
 // 渲染上下文
 export interface RenderContext {
   card: unknown;
@@ -107,6 +133,7 @@ export interface PluginContext {
   // 注册
   registerCommand: (name: string, handler: CommandHandler) => void;
   registerRenderer: (type: string, renderer: RendererDefinition) => void;
+  registerLayoutRenderer: (layoutType: string, renderer: LayoutRendererDefinition) => void;
 
   // 事件
   emit: (event: string, data: unknown) => void;

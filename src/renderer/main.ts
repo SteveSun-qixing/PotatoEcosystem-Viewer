@@ -5,8 +5,9 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
-import { logger } from './services';
+import { logger, translate } from './services';
 import { setupShortcuts } from './core/shortcuts';
+import { getViewerApp } from './core/viewer/ViewerApp';
 import { useConfigStore } from './store';
 
 /**
@@ -45,7 +46,8 @@ async function bootstrap(): Promise<void> {
     app.mount('#app');
 
     // 7. 设置快捷键
-    setupShortcuts();
+    const viewerApp = getViewerApp();
+    setupShortcuts(viewerApp);
     log.debug('Shortcuts initialized');
 
     // 8. 监听系统主题变化
@@ -75,7 +77,7 @@ async function bootstrap(): Promise<void> {
         text-align: center;
         padding: 24px;
       ">
-        <h1 style="color: #ff4d4f; margin-bottom: 16px;">启动失败</h1>
+        <h1 style="color: #ff4d4f; margin-bottom: 16px;">${translate('app.initFailed')}</h1>
         <p style="color: #666; max-width: 400px;">${(error as Error).message}</p>
         <button onclick="window.location.reload()" style="
           margin-top: 24px;
@@ -85,7 +87,7 @@ async function bootstrap(): Promise<void> {
           border: none;
           border-radius: 4px;
           cursor: pointer;
-        ">重新加载</button>
+        ">${translate('app.reload')}</button>
       </div>
     `;
 

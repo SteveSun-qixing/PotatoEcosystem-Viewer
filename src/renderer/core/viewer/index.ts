@@ -11,6 +11,7 @@ export { CardManager } from './CardManager';
 export { BoxManager } from './BoxManager';
 export { NavigationController } from './NavigationController';
 export { ConfigManager } from './ConfigManager';
+export { BaseCardPluginRegistry } from './BaseCardPluginRegistry';
 
 // 类型
 export type {
@@ -21,3 +22,4 @@ export type {
   ConfigManagerOptions,
   InternalState,
 } from './types';
+export type { BaseCardRenderPlugin } from './BaseCardPluginRegistry';

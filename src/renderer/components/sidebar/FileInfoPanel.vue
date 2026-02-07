@@ -10,6 +10,7 @@
  */
 import { computed } from 'vue';
 import { useTranslation } from '@renderer/composables/useTranslation';
+import { getLocale } from '@renderer/services';
 import type { CurrentContent } from '@common/types';
 
 // Props
@@ -30,7 +31,7 @@ const isCard = computed(() => props.content.type === 'card');
 const formattedDate = (dateStr: string | undefined): string => {
   if (!dateStr) return '-';
   try {
-    return new Date(dateStr).toLocaleString();
+    return new Date(dateStr).toLocaleString(getLocale());
   } catch {
     return dateStr;
   }
@@ -96,7 +97,7 @@ const formatTag = (tag: string | string[]): string => {
     </div>
 
     <!-- 无元数据 -->
-    <div v-else class="file-info-panel__empty">无文件信息</div>
+    <div v-else class="file-info-panel__empty">{{ t('sidebar.noFile') }}</div>
   </div>
 </template>
 
